@@ -6,8 +6,8 @@
     "type": "DiscreteMetaAction"
   },
   "lanes_count": 2,
-  "vehicles_count": 5,
-  "duration": 20,
+  "vehicles_count": 10,
+  "duration": 30,
   "initial_spacing": 2,
   "collision_reward": -1,
   "reward_speed_range": [20, 30],
@@ -18,7 +18,7 @@
   "screen_height": 150,
   "centering_position": [0.3, 0.5],
   "scaling": 5.5,
-  "show_trajectories": false,
+  "show_trajectories": true,
   "render_agent": false,
   "offscreen_rendering": false
 }

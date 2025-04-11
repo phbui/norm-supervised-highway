@@ -52,9 +52,11 @@ def main():
     while True:
         done = truncated = False
         obs, info = env.reset()
+        #print("Initial state:", obs)
         while not (done or truncated):
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
+            #print("State:", obs)
             env.render()
 
 if __name__ == "__main__":
