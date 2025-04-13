@@ -1,0 +1,3 @@
+# Untracked directories
+venv/*
+*__pycache__/
