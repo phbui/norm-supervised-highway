@@ -1,9 +1,12 @@
-import os
 import json
+import os
+
+from stable_baselines3 import DQN
 import gymnasium
 import highway_env
-from stable_baselines3 import DQN
+import numpy as np
 
+import metrics
 
 def list_files(directory, extension=".json"):
     return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
@@ -49,6 +52,7 @@ def main():
     print(f"Creating environment with config from {env_config_path}...")
     env = gymnasium.make("highway-fast-v0", render_mode="human", config=env_config)
 
+    ttc_history = []
     while True:
         done = truncated = False
         obs, info = env.reset()
@@ -57,7 +61,12 @@ def main():
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
             #print("State:", obs)
+            ttcs = metrics.neighbor_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
+            #print(f"TTCs: ({ttcs[0]}, {ttcs[1]})")
+            ttc_history.append(ttcs[0])
             env.render()
+        tet = metrics.tet(ttc_history, env_config["simulation_frequency"])
+        #print(f"TET: {tet:.2f} seconds")
 
 if __name__ == "__main__":
     main()
