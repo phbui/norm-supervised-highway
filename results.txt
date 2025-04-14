@@ -1,0 +1,13 @@
+Averaged over 10 experiments
+100 episodes
+
+WITH SUPERVISOR
+Collisions: [12, 19, 20, 12, 14, 14, 24, 18, 18, 13]
+Average collisions: 16.40
+SVD: 3.80
+
+WITHOUT SUPERVISOR
+Collisions: [26, 34, 31, 24, 38, 32, 38, 27, 28, 37]
+Average collisions: 31.50
+SVD: 4.90
+
