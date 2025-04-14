@@ -6,7 +6,6 @@ from stable_baselines3 import DQN
 import numpy as np
 from supervisor import Supervisor
 
-
 def list_files(directory, extension=".json"):
     return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
 
@@ -30,7 +29,7 @@ def main():
     print("\nAvailable models:")
     for i, f in enumerate(model_files):
         print(f"[{i}] {f}")
-    model_index = 0
+    # model_index = 1 # uncomment to harcode model
     model_path = os.path.join("models", model_files[model_index])
 
     env_configs = list_files("configs/environment")
@@ -41,14 +40,14 @@ def main():
     print("\nAvailable environment configs:")
     for i, f in enumerate(env_configs):
         print(f"[{i}] {f}")
-    env_index = 1
+    # env_index = 2 # uncomment to harcode env
     env_config_path = os.path.join("configs/environment", env_configs[env_index])
     env_config = load_config(env_config_path)
 
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
 
-    num_experiments = 10
+    num_experiments = 2
     num_episodes = 100
 
     results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
@@ -87,12 +86,14 @@ def main():
         results[mode] = all_collisions
 
     # Write results to a file
-    with open("results.txt", "w") as f:
+    with open("results.txt", "a") as f:
         f.write(f"Averaged over {num_experiments} experiments\n")
         f.write(f"{num_episodes} episodes\n\n")
 
         for mode, collisions in results.items():
             f.write(f"{mode}\n")
+            f.write(f"Num lanes: {env_config['lanes_count']}\n")
+            f.write(f"Num vehicles: {env_config['vehicles_count']}\n")
             f.write(f"Collisions: {collisions}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f}\n")
             f.write(f"SVD: {np.std(collisions):.2f}\n\n")

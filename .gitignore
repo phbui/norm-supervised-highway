@@ -4,3 +4,4 @@ myenv/
 # Untracked directories
 venv/*
 *__pycache__/
+results.txt

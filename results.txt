@@ -11,3 +11,20 @@ Collisions: [26, 34, 31, 24, 38, 32, 38, 27, 28, 37]
 Average collisions: 31.50
 SVD: 4.90
 
+Averaged over 2 experiments
+100 episodes
+
+WITH SUPERVISOR
+Num lanes: 4
+Num vehicles: 10
+Collisions: [53, 43]
+Average collisions: 48.00
+SVD: 5.00
+
+WITHOUT SUPERVISOR
+Num lanes: 4
+Num vehicles: 10
+Collisions: [56, 61]
+Average collisions: 58.50
+SVD: 2.50
+
