@@ -1,4 +1,6 @@
 highway_venv/
 myenv/
-__pycache__/
 .DS_Store
+# Untracked directories
+venv/*
+*__pycache__/
