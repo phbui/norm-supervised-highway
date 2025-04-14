@@ -1,30 +1,57 @@
-Averaged over 10 experiments
-100 episodes
+######## Training run #1 ############
+Model: long_survival.zip:
+Environment config: default.json:
+Lanes: 2
+Vehicles: 5
+Duration: 20
+Experiments: 2
+Episodes: 5
 
 WITH SUPERVISOR
-Collisions: [12, 19, 20, 12, 14, 14, 24, 18, 18, 13]
-Average collisions: 16.40
-SVD: 3.80
+Collisions: [0, 0]
+Average collisions: 0.00
+SVD: 0.00
 
 WITHOUT SUPERVISOR
-Collisions: [26, 34, 31, 24, 38, 32, 38, 27, 28, 37]
-Average collisions: 31.50
-SVD: 4.90
+Collisions: [5, 2]
+Average collisions: 3.50
+SVD: 1.50
 
-Averaged over 2 experiments
-100 episodes
+######## Training run #2 ############
+Model: trained.zip:
+Environment config: run.json:
+Lanes: 2
+Vehicles: 10
+Duration: 30
+Experiments: 2
+Episodes: 5
 
 WITH SUPERVISOR
-Num lanes: 4
-Num vehicles: 10
-Collisions: [53, 43]
-Average collisions: 48.00
-SVD: 5.00
+Collisions: [2, 3]
+Average collisions: 2.50
+SVD: 0.50
 
 WITHOUT SUPERVISOR
-Num lanes: 4
-Num vehicles: 10
-Collisions: [56, 61]
-Average collisions: 58.50
-SVD: 2.50
+Collisions: [1, 2]
+Average collisions: 1.50
+SVD: 0.50
+
+######## Training run #3 ############
+Model: trained.zip:
+Environment config: train_30_duration_2_lanes_5_vehicles.json:
+Lanes: 2
+Vehicles: 5
+Duration: 30
+Experiments: 10
+Episodes: 100
+
+WITH SUPERVISOR
+Collisions: [5, 7, 2, 9, 4, 3, 4, 1, 2, 1]
+Average collisions: 3.80
+SVD: 2.48
+
+WITHOUT SUPERVISOR
+Collisions: [9, 9, 8, 9, 6, 9, 5, 9, 8, 5]
+Average collisions: 7.70
+SVD: 1.62
 

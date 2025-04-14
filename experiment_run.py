@@ -29,7 +29,8 @@ def main():
     print("\nAvailable models:")
     for i, f in enumerate(model_files):
         print(f"[{i}] {f}")
-    # model_index = 1 # uncomment to harcode model
+    # model_index = 1 # uncomment to harcode model, comment next line
+    model_index = int(input("Select a model to run by number: ")) 
     model_path = os.path.join("models", model_files[model_index])
 
     env_configs = list_files("configs/environment")
@@ -40,14 +41,15 @@ def main():
     print("\nAvailable environment configs:")
     for i, f in enumerate(env_configs):
         print(f"[{i}] {f}")
-    # env_index = 2 # uncomment to harcode env
+    # env_index = 2 # uncomment to harcode env, comment next line1
+    env_index = int(input("Select an environment config by number: "))
     env_config_path = os.path.join("configs/environment", env_configs[env_index])
     env_config = load_config(env_config_path)
 
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
 
-    num_experiments = 2
+    num_experiments = 10
     num_episodes = 100
 
     results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
@@ -85,15 +87,27 @@ def main():
         env.close()
         results[mode] = all_collisions
 
+    # get count of string 'Training run #' in file
+    count = 1
+    with open("results.txt", "r") as f2:
+        lines = f2.readlines()
+        count += sum(1 for line in lines if "Training run #" in line) 
+
     # Write results to a file
     with open("results.txt", "a") as f:
-        f.write(f"Averaged over {num_experiments} experiments\n")
-        f.write(f"{num_episodes} episodes\n\n")
+
+        f.write(f"######## Training run #{count} ############\n")
+        f.write(f"Model: {model_files[model_index]}:\n")
+        f.write(f"Environment config: {env_configs[env_index]}:\n")
+        f.write(f"Lanes: {env_config['lanes_count']}\n")
+        f.write(f"Vehicles: {env_config['vehicles_count']}\n")
+        f.write(f"Duration: {env_config['duration']}\n")
+        f.write(f"Experiments: {num_experiments}\n")
+        f.write(f"Episodes: {num_episodes}\n\n")
 
         for mode, collisions in results.items():
             f.write(f"{mode}\n")
-            f.write(f"Num lanes: {env_config['lanes_count']}\n")
-            f.write(f"Num vehicles: {env_config['vehicles_count']}\n")
+            
             f.write(f"Collisions: {collisions}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f}\n")
             f.write(f"SVD: {np.std(collisions):.2f}\n\n")
