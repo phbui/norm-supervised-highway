@@ -3,8 +3,10 @@ import numpy.typing as npt
 
 from highway_env.road.road import Road
 from highway_env.vehicle.kinematics import Vehicle
+from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.envs.common.action import DiscreteMetaAction
 
-def ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
+def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
     """
     Calculate the Time-To-Collision (TTC) between two vehicles, assuming straight lanes.
 
@@ -27,7 +29,7 @@ def ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
     return ((v_front.position[0] - v_rear.position[0] - Vehicle.LENGTH)
             / (v_rear.velocity[0] - v_front.velocity[0]))
 
-def neighbor_ttcs(vehicle: Vehicle, road: Road) -> tuple[float, float]:
+def calculate_neighbor_ttcs(vehicle: Vehicle, road: Road) -> tuple[float, float]:
     """
     Calculate the TTCs for neighboring vehicles of the given vehicle, assuming straight lanes.
 
@@ -45,9 +47,10 @@ def neighbor_ttcs(vehicle: Vehicle, road: Road) -> tuple[float, float]:
     if vehicle not in road.vehicles:
         raise ValueError("The given vehicle is not driving on the given road.")
     v_front, v_rear = road.neighbour_vehicles(vehicle)
-    return (ttc(v_front, vehicle), ttc(vehicle, v_rear))
+    return (calculate_ttc(v_front, vehicle), calculate_ttc(vehicle, v_rear))
 
-def tet(ttc_history: npt.ArrayLike, sample_frequency: float, ttc_threshold: float = 2.0) -> float:
+def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,
+                  ttc_threshold: float = 2.0) -> float:
     """
     Calculate the Time Exposed Time-To-Collision (TET) from a list of TTC values.
 
@@ -63,5 +66,49 @@ def tet(ttc_history: npt.ArrayLike, sample_frequency: float, ttc_threshold: floa
     if ttc_history.ndim != 1:
         raise ValueError("TTC history must be a 1D array of floats.")
     # TET = sum(beta * step_size) where beta = 1 if ttc < ttc_threshold else 0
-    step_size = 1 / sample_frequency
+    step_size = 1 / simulation_frequency
     return step_size * (ttc_history < ttc_threshold).sum()
+
+def calculate_safe_distance(vehicle: Vehicle, action_type: DiscreteMetaAction,
+                            simulation_frequency: float) -> float:
+    """
+    Calculate the safe longitudinal distance for the ego vehicle.
+
+    Implements the simplified metric from Zhao et al. (2020) assuming that the two vehicles are
+    traveling in the same direction.
+
+    :param vehicle: the ego vehicle
+    :param action_type: the DiscreteMetaAction action type of the ego vehicle
+    :param simulation_frequency: the frequency at which the simulation is running (in Hz)
+
+    :return: the safe longitudinal distance in meters
+    """
+    target_speeds = np.sort(action_type.target_speeds)
+    speed_intervals = np.diff(target_speeds)
+    # Maximum and minimum acceleration values permitted by the proportional speed controller
+    acc_max = ControlledVehicle.KP_A * speed_intervals.max()
+    decc_min = ControlledVehicle.KP_A * speed_intervals.min()
+
+    step_size = 1 / simulation_frequency
+    velocity = vehicle.velocity[0]
+
+    alpha = 0.5 * acc_max + 0.5 * acc_max ** 2 / decc_min
+    beta = velocity * ( 1 + acc_max / decc_min)
+    gamma = 0.5 * velocity ** 2 / decc_min
+    return alpha * step_size ** 2 + beta * step_size + gamma
+
+def calculate_safety_score(reward: float, penalty: float, distance: float, safe_distance: float) -> float:
+    """
+    Calculate the safety score as defined by Zhao et al. (2020).
+
+    :param reward: the user-specified reward to achieve extra margin from the minimum safe distance
+    :param penalty: the user-specified penalty of unit distance less than the minimum safe distance
+    :param distance: the current distance between vehicles
+    :param safe_distance: the safe distance
+
+    :return: the safety score
+    """
+    if distance > safe_distance:
+        return reward * (distance - safe_distance)
+    else:
+        return penalty * (distance - safe_distance)
