@@ -5,8 +5,8 @@
   "action": {
     "type": "DiscreteMetaAction"
   },
-  "lanes_count": 2,
-  "vehicles_count": 10,
+  "lanes_count": 3,
+  "vehicles_count": 20,
   "duration": 30,
   "initial_spacing": 2,
   "collision_reward": -1,

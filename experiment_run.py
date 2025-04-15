@@ -42,7 +42,7 @@ def main():
     for i, f in enumerate(env_configs):
         print(f"[{i}] {f}")
     # env_index = 2 # uncomment to harcode env, comment next line1
-    env_index = int(input("Select an environment config by number: "))
+    env_index = 2
     env_config_path = os.path.join("configs/environment", env_configs[env_index])
     env_config = load_config(env_config_path)
 
@@ -61,8 +61,8 @@ def main():
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
             print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
-            supervisor = Supervisor(verbose=False) if mode == "WITH SUPERVISOR" else None
+            env = gymnasium.make("highway-fast-v0", render_mode="human", config=env_config)
+            supervisor = Supervisor(env_config=env_config, verbose=True) if mode == "WITH SUPERVISOR" else None
 
             for episode in range(num_episodes):
                 print(f"\nEpisode {episode + 1}/{num_episodes}, Collision count: {num_collision}")
@@ -73,6 +73,10 @@ def main():
 
                     if supervisor:
                         action = supervisor.decide_action(action, obs, info)
+
+                    if action == 0 or action == 2:
+                        print("Switching lanes") 
+
                     obs, reward, done, truncated, info = env.step(action)
 
                     if done or truncated:
