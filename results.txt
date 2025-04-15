@@ -1,57 +1,21 @@
 ######## Training run #1 ############
-Model: long_survival.zip:
-Environment config: default.json:
-Lanes: 2
-Vehicles: 5
-Duration: 20
-Experiments: 2
-Episodes: 5
-
-WITH SUPERVISOR
-Collisions: [0, 0]
-Average collisions: 0.00
-SVD: 0.00
-
-WITHOUT SUPERVISOR
-Collisions: [5, 2]
-Average collisions: 3.50
-SVD: 1.50
-
-######## Training run #2 ############
-Model: trained.zip:
-Environment config: run.json:
-Lanes: 2
-Vehicles: 10
+Model: trained_30_duration_4_lanes_20_vehicles.zip:
+Environment config: train_30_duration_4_lanes_20_vehicles.json:
+Lanes: 4
+Vehicles: 20
 Duration: 30
-Experiments: 2
-Episodes: 5
-
-WITH SUPERVISOR
-Collisions: [2, 3]
-Average collisions: 2.50
-SVD: 0.50
-
-WITHOUT SUPERVISOR
-Collisions: [1, 2]
-Average collisions: 1.50
-SVD: 0.50
-
-######## Training run #3 ############
-Model: trained.zip:
-Environment config: train_30_duration_2_lanes_5_vehicles.json:
-Lanes: 2
-Vehicles: 5
-Duration: 30
-Experiments: 10
+Experiments: 5
 Episodes: 100
 
 WITH SUPERVISOR
-Collisions: [5, 7, 2, 9, 4, 3, 4, 1, 2, 1]
-Average collisions: 3.80
-SVD: 2.48
+Collisions: 40
+Average collisions: 8.00 (2.00)
+Violations: 5675
+Average violations: 1135.00 (45.35) 
 
 WITHOUT SUPERVISOR
-Collisions: [9, 9, 8, 9, 6, 9, 5, 9, 8, 5]
-Average collisions: 7.70
-SVD: 1.62
+Collisions: 44
+Average collisions: 8.80 (1.17)
+Violations: 5784
+Average violations: 1156.80 (86.41) 
 

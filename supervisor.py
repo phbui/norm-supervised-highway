@@ -5,6 +5,7 @@ class Supervisor:
     SPEED_THRESHOLD = 30
     VEHICLE_AHEAD_BRAKING_THRESHOLD = -0.1
     CUT_OFF_THRESHOLD = 0.08 # about 2 car lengths
+    DEFENSIVE_TRHESHOLD = 0.05 # about 1 car length
 
     ACTIONS_ALL = {
         0: 'LANE_LEFT',
@@ -69,7 +70,7 @@ class Supervisor:
         ego_vehicle = obs[0]
         ego_x, ego_y = ego_vehicle[1], ego_vehicle[2]
 
-        # Check if the lane change is safe
+        # Define the lane range of relative y values based on the action
         lane_y_range = float
         if action == 0: # LANE_LEFT
             lane_y_range =  [(-1/num_lanes), (-1/(num_lanes*2))]
@@ -80,7 +81,6 @@ class Supervisor:
             low, high = min(range_bounds), max(range_bounds)
             return low <= value <= high if inclusive else low < value < high
 
-        # Check if the vehicle is in the lane range
         for vehicle in obs[1:]:
             vehicle_x, vehicle_y = vehicle[1], vehicle[2]
             if in_range(vehicle_y, lane_y_range):
@@ -91,6 +91,7 @@ class Supervisor:
         return False
                
     def decide_action(self, action, obs, info):
+        violations = 0 
         if isinstance(action, np.ndarray):
             action = int(action.item())
 
@@ -98,11 +99,11 @@ class Supervisor:
         ego_x, ego_y, ego_vx, ego_vy = ego_vehicle[1], ego_vehicle[2], ego_vehicle[3], ego_vehicle[4]
         vehicle_ahead = self.get_vehicle_ahead(obs)
         
-        if self.check_out_of_bounds_lane_change(action, obs): # Treat as idling
+        if self.check_out_of_bounds_lane_change(action, obs): # Not a norm violation, just a bug from non restricted action space
             action = 4  # GO-SLOWER fallback
 
-        # if self.verbose:
-            # print(f"Action: {self.ACTIONS_ALL[action]}")
+        if self.verbose:
+            print(f"Action: {self.ACTIONS_ALL[action]}")
 
         if self.ACTIONS_ALL[action] in ['FASTER', 'IDLE']:
             if vehicle_ahead is not None:
@@ -111,21 +112,33 @@ class Supervisor:
                 # VEHICLE_AHEAD_BRAKING_THRESHOLD
                 if vehicle_ahead_vx < self.VEHICLE_AHEAD_BRAKING_THRESHOLD:
                     if self.verbose:
-                        print("VEHICLE_AHEAD_BRAKING. Slowing down.")
+                        print("VEHICLE_AHEAD_BRAKING. Slowing down.") # should consider switching lanes if within certain distance 
                     action = 4 # GO-SLOWER fallback
+                    violations += 1
+                # TAILGATE_THRESHOLD
                 elif vehicle_ahead_x < self.TAILGATE_THRESHOLD:
                     if self.verbose:
                         print(f"TAILGATING. Slowing down. Vehicle ahead x: {vehicle_ahead_x}")
                     action = 4 # GO-SLOWER fallback
+                    violations += 1
+                # SPEED_THRESHOLD
                 elif ego_vx > self.SPEED_THRESHOLD:
                     if self.verbose:
                         print("SPEEDING. Slowing down.")
                     action = 4 # GO-SLOWER fallback
+                    violations += 1
         
         elif self.ACTIONS_ALL[action] in ['LANE_LEFT', 'LANE_RIGHT']:
-            if self.check_lane_change_cutoff(action, obs): # opportunity to deconflict depending on other cars behavior, for example sudden braking from car in front 
-                if self.verbose:
-                    print("LANE_CHANGE_CUT_OFF. Slowing down.")
-                action = 4 # GO-SLOWER fallback
+            # LANE_CHANGE_CUT_OFF
+            if self.check_lane_change_cutoff(action, obs): 
+                if vehicle_ahead is not None and vehicle_ahead[0] != 0 and vehicle_ahead[1] < self.DEFENSIVE_TRHESHOLD and vehicle_ahead[3]:  # vehicle ahead is present and within the defensive threshold.
+                    if self.verbose:
+                        print(f"DEFENSIVE LANE CHANGE. Vehicle ahead x: {vehicle_ahead_x}") # not perfect because accelerating up to a vehicle and then cutting someone off should be a violation
+                else: 
+                    if self.verbose:
+                        print("LANE_CHANGE_CUT_OFF. Slowing down.")
+
+                    action = 4 # GO-SLOWER fallback
+                    violations += 1
                     
-        return action
+        return action, violations

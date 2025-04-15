@@ -42,41 +42,49 @@ def main():
     for i, f in enumerate(env_configs):
         print(f"[{i}] {f}")
     # env_index = 2 # uncomment to harcode env, comment next line1
-    env_index = 2
+    env_index = int(input("Select an environment config by number: "))
     env_config_path = os.path.join("configs/environment", env_configs[env_index])
     env_config = load_config(env_config_path)
 
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
 
-    num_experiments = 10
+    num_experiments = 5
     num_episodes = 100
 
     results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
 
     for mode in results.keys():
         all_collisions = []
+        all_violations = []
 
         for experiment in range(num_experiments):
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
+            num_violations = 0
             print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="human", config=env_config)
-            supervisor = Supervisor(env_config=env_config, verbose=True) if mode == "WITH SUPERVISOR" else None
+            env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
+            supervisor = Supervisor(env_config=env_config, verbose=False) 
 
             for episode in range(num_episodes):
-                print(f"\nEpisode {episode + 1}/{num_episodes}, Collision count: {num_collision}")
+                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}")
                 done = truncated = False
                 obs, info = env.reset()
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
 
                     if supervisor:
-                        action = supervisor.decide_action(action, obs, info)
-
-                    if action == 0 or action == 2:
-                        print("Switching lanes") 
-
+                        # TODO: calclulate norm violations using state after step and safety metrics. 
+                        action, violations = supervisor.decide_action(action, obs, info) 
+                    else:
+                        """
+                        get violations but dont override action.
+                        note that violations tend to be higher for supervised agent because slow down fall back tends to persist a violation rather than 
+                        speeding through it  
+                        """
+                        _, violations = supervisor.decide_action(action, obs, info) # 
+                       
+                    num_violations += violations # count violations
                     obs, reward, done, truncated, info = env.step(action)
 
                     if done or truncated:
@@ -86,10 +94,12 @@ def main():
                 # env.render()  # Uncomment if you want to render the environment
 
             all_collisions.append(num_collision)
-            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}")
+            all_violations.append(num_violations)
+            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}. Violations: {num_violations}")
 
         env.close()
-        results[mode] = all_collisions
+        results[mode] = [all_collisions, all_violations]
+        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {all_violations}")
 
     # get count of string 'Training run #' in file
     count = 1
@@ -109,12 +119,13 @@ def main():
         f.write(f"Experiments: {num_experiments}\n")
         f.write(f"Episodes: {num_episodes}\n\n")
 
-        for mode, collisions in results.items():
+        for mode, [collisions, violations] in results.items():
             f.write(f"{mode}\n")
             
-            f.write(f"Collisions: {collisions}\n")
-            f.write(f"Average collisions: {np.mean(collisions):.2f}\n")
-            f.write(f"SVD: {np.std(collisions):.2f}\n\n")
+            f.write(f"Collisions: {sum(collisions)}\n")
+            f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
+            f.write(f"Violations: {sum(violations)}\n")
+            f.write(f"Average violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
 
     print("Results written to results.txt")
 if __name__ == "__main__":
