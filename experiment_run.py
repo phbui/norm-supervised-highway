@@ -5,6 +5,8 @@ import highway_env
 from stable_baselines3 import DQN
 import numpy as np
 from supervisor import Supervisor
+BASE_SEED = 239
+
 
 def list_files(directory, extension=".json"):
     return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
@@ -48,9 +50,10 @@ def main():
 
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
+    model.set_random_seed(BASE_SEED)
 
-    num_experiments = 2
-    num_episodes = 10
+    num_experiments = 5
+    num_episodes = 100
 
     results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
 
@@ -60,6 +63,7 @@ def main():
         all_avoided_violations = []
 
         for experiment in range(num_experiments):
+            experiment_seed = BASE_SEED * (10 ** len(str(abs(num_experiments)))) + experiment
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
             num_violations = 0
@@ -71,24 +75,23 @@ def main():
             for episode in range(num_episodes):
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
-                obs, info = env.reset(seed=239) # <- seeded
+                episode_seed = experiment_seed * (10 ** len(str(abs(num_episodes)))) + episode
+                obs, info = env.reset(seed=episode_seed) # <- seeded
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
                     new_action, violations = supervisor.decide_action(action, obs, info) 
-                    new_violations = 0
 
                     if mode == "WITH SUPERVISOR":
                         action = new_action
                         _, new_violations = supervisor.decide_action(action, obs, info) 
+                    else:
+                        new_violations = violations
                        
-                    num_violations += violations # count violations
-                    obs, reward, done, truncated, info = env.step(action)
+                    num_violations += new_violations # count violations
+                    avoided = max(violations - new_violations, 0)
+                    num_avoided_violations += avoided
 
-                    # TODO: calclulate norm violations using state after step and safety metrics. 
-                    avoided_violations = new_violations - violations
-                    if (avoided_violations < 0):
-                        avoided_violations = 0
-                    num_avoided_violations += avoided_violations
+                    obs, reward, done, truncated, info = env.step(action)
 
                     if done or truncated:
                         if info["crashed"]:
