@@ -49,8 +49,8 @@ def main():
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
 
-    num_experiments = 5
-    num_episodes = 100
+    num_experiments = 2
+    num_episodes = 10
 
     results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
 
@@ -74,22 +74,20 @@ def main():
                 obs, info = env.reset(seed=239) # <- seeded
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
+                    new_action, violations = supervisor.decide_action(action, obs, info) 
+                    new_violations = 0
 
-                    if supervisor:
-                        action, violations = supervisor.decide_action(action, obs, info) 
-                    else:
-                        """
-                        get violations but dont override action.
-                        note that violations tend to be higher for supervised agent because slow down fall back tends to persist a violation rather than 
-                        speeding through it  
-                        """
-                        _, violations = supervisor.decide_action(action, obs, info) # 
+                    if mode == "WITH SUPERVISOR":
+                        action = new_action
+                        _, new_violations = supervisor.decide_action(action, obs, info) 
                        
                     num_violations += violations # count violations
                     obs, reward, done, truncated, info = env.step(action)
 
                     # TODO: calclulate norm violations using state after step and safety metrics. 
-                    avoided_violations = supervisor.detect_avoided_violations(violations, action, obs, info)
+                    avoided_violations = new_violations - violations
+                    if (avoided_violations < 0):
+                        avoided_violations = 0
                     num_avoided_violations += avoided_violations
 
                     if done or truncated:

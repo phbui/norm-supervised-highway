@@ -142,10 +142,3 @@ class Supervisor:
                     violations += 1
                     
         return action, violations
-    
-    def detect_avoided_violations(self, violations, action, obs, info):
-        _, new_violations = self.decide_action(action, obs, info)
-        avoided_violations = violations - new_violations
-
-        return avoided_violations
-        
