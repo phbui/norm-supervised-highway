@@ -71,7 +71,7 @@ def main():
             for episode in range(num_episodes):
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
-                obs, info = env.reset()
+                obs, info = env.reset(seed=239) # <- seeded
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
 
