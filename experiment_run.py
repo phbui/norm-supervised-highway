@@ -79,16 +79,16 @@ def main():
                 obs, info = env.reset(seed=episode_seed) # <- seeded
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
-                    new_action, violations = supervisor.decide_action(action, obs, info) 
+                    new_action, violations = supervisor.decide_action(action, obs, info) # new best action based on norms, violations based on old action + norms
 
                     if mode == "WITH SUPERVISOR":
                         action = new_action
-                        _, new_violations = supervisor.decide_action(action, obs, info) 
+                        _, new_violations = supervisor.decide_action(action, obs, info) # new set of violations based on new action + norms
                     else:
-                        new_violations = violations
+                        new_violations = violations # old set of violations based on old action + norms
                        
                     num_violations += new_violations # count violations
-                    avoided = max(violations - new_violations, 0)
+                    avoided = max(violations - new_violations, 0) # number of violations avoided
                     num_avoided_violations += avoided
 
                     obs, reward, done, truncated, info = env.step(action)
