@@ -57,24 +57,25 @@ def main():
     for mode in results.keys():
         all_collisions = []
         all_violations = []
+        all_avoided_violations = []
 
         for experiment in range(num_experiments):
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
             num_violations = 0
+            num_avoided_violations = 0
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
             supervisor = Supervisor(env_config=env_config, verbose=False) 
 
             for episode in range(num_episodes):
-                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}")
+                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
                 obs, info = env.reset()
                 while not (done or truncated):
                     action, _states = model.predict(obs, deterministic=True)
 
                     if supervisor:
-                        # TODO: calclulate norm violations using state after step and safety metrics. 
                         action, violations = supervisor.decide_action(action, obs, info) 
                     else:
                         """
@@ -87,6 +88,10 @@ def main():
                     num_violations += violations # count violations
                     obs, reward, done, truncated, info = env.step(action)
 
+                    # TODO: calclulate norm violations using state after step and safety metrics. 
+                    avoided_violations = supervisor.detect_avoided_violations(violations, action, obs, info)
+                    num_avoided_violations += avoided_violations
+
                     if done or truncated:
                         if info["crashed"]:
                             num_collision += 1
@@ -95,11 +100,12 @@ def main():
 
             all_collisions.append(num_collision)
             all_violations.append(num_violations)
-            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}. Violations: {num_violations}")
+            all_avoided_violations.append(num_avoided_violations)
+            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}. Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
 
         env.close()
-        results[mode] = [all_collisions, all_violations]
-        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {all_violations}")
+        results[mode] = [all_collisions, all_violations, all_avoided_violations]
+        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {all_violations}, Avoided Violations: {all_avoided_violations}")
 
     # get count of string 'Training run #' in file
     count = 1
@@ -119,13 +125,15 @@ def main():
         f.write(f"Experiments: {num_experiments}\n")
         f.write(f"Episodes: {num_episodes}\n\n")
 
-        for mode, [collisions, violations] in results.items():
+        for mode, [collisions, violations, avoided_violations] in results.items():
             f.write(f"{mode}\n")
             
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
             f.write(f"Violations: {sum(violations)}\n")
             f.write(f"Average violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
+            f.write(f"Avoided violations: {sum(avoided_violations)}\n")
+            f.write(f"Average avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
 
     print("Results written to results.txt")
 if __name__ == "__main__":
