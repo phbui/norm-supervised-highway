@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 
 from highway_env.envs.common.action import DiscreteMetaAction
-from highway_env.road.road import Road
+from highway_env.road.road import Road, LaneIndex
 from highway_env.vehicle.controller import ControlledVehicle
 from highway_env.vehicle.kinematics import Vehicle
 
@@ -29,14 +29,14 @@ def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
     return ((v_front.position[0] - v_rear.position[0] - Vehicle.LENGTH)
             / (v_rear.velocity[0] - v_front.velocity[0]))
 
-def calculate_neighbor_ttcs(vehicle: Vehicle, road: Road) -> tuple[float, float]:
+def calculate_neighbour_ttcs(vehicle: Vehicle, road: Road, lane_index: LaneIndex = None) -> tuple[float, float]:
     """
     Calculate the TTCs for neighboring vehicles of the given vehicle, assuming straight lanes.
 
     Example usage::
 
         env = gymnasium.make("highway-fast-v0")
-        ttc_front, ttc_rear = neighbor_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
+        ttc_front, ttc_rear = neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
 
     :param vehicle: the vehicle for which to compute neighbor TTC values
     :param road: the corresponding road object from the game environment
@@ -46,7 +46,7 @@ def calculate_neighbor_ttcs(vehicle: Vehicle, road: Road) -> tuple[float, float]
     """
     if vehicle not in road.vehicles:
         raise ValueError("The given vehicle is not driving on the given road.")
-    v_front, v_rear = road.neighbour_vehicles(vehicle)
+    v_front, v_rear = road.neighbour_vehicles(vehicle, lane_index)
     return (calculate_ttc(v_front, vehicle), calculate_ttc(vehicle, v_rear))
 
 def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,

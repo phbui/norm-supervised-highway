@@ -61,7 +61,7 @@ def main():
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
             #print("State:", obs)
-            ttcs = metrics.calculate_neighbor_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
+            ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
             #print(f"TTCs: ({ttcs[0]}, {ttcs[1]})")
             ttc_history.append(ttcs[0])
             safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle.speed, env.unwrapped.action_type,
