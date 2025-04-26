@@ -64,7 +64,7 @@ def main():
             ttcs = metrics.calculate_neighbor_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
             #print(f"TTCs: ({ttcs[0]}, {ttcs[1]})")
             ttc_history.append(ttcs[0])
-            safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle, env.unwrapped.action_type,
+            safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle.speed, env.unwrapped.action_type,
                                                             env_config["simulation_frequency"])
             #print(f"Safe distance: {safe_distance:.2f} m")
             env.render()

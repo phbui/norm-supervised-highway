@@ -1,10 +1,10 @@
 import numpy as np
 import numpy.typing as npt
 
-from highway_env.road.road import Road
-from highway_env.vehicle.kinematics import Vehicle
-from highway_env.vehicle.controller import ControlledVehicle
 from highway_env.envs.common.action import DiscreteMetaAction
+from highway_env.road.road import Road
+from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.vehicle.kinematics import Vehicle
 
 def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
     """
@@ -69,7 +69,7 @@ def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,
     step_size = 1 / simulation_frequency
     return step_size * (ttc_history < ttc_threshold).sum()
 
-def calculate_safe_distance(vehicle: Vehicle, action_type: DiscreteMetaAction,
+def calculate_safe_distance(speed: float, action_type: DiscreteMetaAction,
                             simulation_frequency: float) -> float:
     """
     Calculate the safe longitudinal distance for the ego vehicle.
@@ -77,7 +77,7 @@ def calculate_safe_distance(vehicle: Vehicle, action_type: DiscreteMetaAction,
     Implements the simplified metric from Zhao et al. (2020) assuming that the two vehicles are
     traveling in the same direction.
 
-    :param vehicle: the ego vehicle
+    :param speed: the longitudinal speed of the ego vehicle
     :param action_type: the DiscreteMetaAction action type of the ego vehicle
     :param simulation_frequency: the frequency at which the simulation is running (in Hz)
 
@@ -88,13 +88,11 @@ def calculate_safe_distance(vehicle: Vehicle, action_type: DiscreteMetaAction,
     # Maximum and minimum acceleration values permitted by the proportional speed controller
     acc_max = ControlledVehicle.KP_A * speed_intervals.max()
     decc_min = ControlledVehicle.KP_A * speed_intervals.min()
-
     step_size = 1 / simulation_frequency
-    velocity = vehicle.velocity[0]
 
     alpha = 0.5 * acc_max + 0.5 * acc_max ** 2 / decc_min
-    beta = velocity * ( 1 + acc_max / decc_min)
-    gamma = 0.5 * velocity ** 2 / decc_min
+    beta = speed * ( 1 + acc_max / decc_min)
+    gamma = 0.5 * speed ** 2 / decc_min
     return alpha * step_size ** 2 + beta * step_size + gamma
 
 def calculate_safety_score(reward: float, penalty: float, distance: float, safe_distance: float) -> float:
