@@ -1,6 +1,9 @@
+# Untracked directories
+.vscode/
+*__pycache__/
 highway_venv/
 myenv/
+venv/
+
+# Untracked files
 .DS_Store
-# Untracked directories
-venv/*
-*__pycache__/
