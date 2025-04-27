@@ -19,3 +19,30 @@ Average collisions: 8.80 (1.17)
 Violations: 5784
 Average violations: 1156.80 (86.41) 
 
+######## Training run #2 ############
+Model: trained_30_duration_2_lanes_5_vehicles.zip:
+Environment config: train_30_duration_2_lanes_5_vehicles.json:
+Lanes: 2
+Vehicles: 5
+Duration: 30
+Experiments: 5
+Episodes: 100
+
+WITH SUPERVISOR
+Collisions: 10
+Average collisions: 2.00 (1.67)
+Violations: 3078
+Average violations: 615.60 (43.27) 
+
+Avoided violations: 5593
+Average avoided violations: 1118.60 (23.71) 
+
+WITHOUT SUPERVISOR
+Collisions: 80
+Average collisions: 16.00 (2.76)
+Violations: 6746
+Average violations: 1349.20 (41.79) 
+
+Avoided violations: 0
+Average avoided violations: 0.00 (0.00) 
+

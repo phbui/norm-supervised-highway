@@ -70,25 +70,28 @@ def main():
             num_avoided_violations = 0
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
-            supervisor = Supervisor(env_config=env_config, verbose=False) 
+            supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
 
             for episode in range(num_episodes):
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
                 episode_seed = experiment_seed * (10 ** len(str(abs(num_episodes)))) + episode
-                obs, info = env.reset(seed=episode_seed) # <- seeded
+                obs, _ = env.reset(seed=episode_seed) # <- seeded
+                supervisor.reset_norms()
                 while not (done or truncated):
-                    action, _states = model.predict(obs, deterministic=True)
-                    new_action, violations = supervisor.decide_action(action, obs, info) # new best action based on norms, violations based on old action + norms
+                    action, _  = model.predict(obs, deterministic=True)
+                    violations = supervisor.count_action_norm_violations(action)
 
                     if mode == "WITH SUPERVISOR":
-                        action = new_action
-                        _, new_violations = supervisor.decide_action(action, obs, info) # new set of violations based on new action + norms
+                        # Select new action and compute number of avoided violations
+                        new_action, new_violations = supervisor.decide_action(model, obs)
+                        avoided    = violations - new_violations
+                        action     = new_action
+                        violations = new_violations
                     else:
-                        new_violations = violations # old set of violations based on old action + norms
-                       
-                    num_violations += new_violations # count violations
-                    avoided = max(violations - new_violations, 0) # number of violations avoided
+                        avoided = 0
+
+                    num_violations         += violations
                     num_avoided_violations += avoided
 
                     obs, reward, done, truncated, info = env.step(action)
