@@ -141,9 +141,12 @@ def main():
         results[mode] = [all_collisions, all_violations, all_avoided_violations, all_violations_dict, all_avoided_violations_dict]
         print(f"Results for {mode}: Collisions: {all_collisions}, Unavoided Violatons: {str(all_violations_dict)}, Total Unavoided: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
 
+    if not os.path.exists(output_file):
+        open(output_file, 'w').close()
+
     # get count of string 'Training run #' in file
     count = 1
-    with open("results.txt", "r") as f2:
+    with open(output_file, "r") as f2:
         lines = f2.readlines()
         count += sum(1 for line in lines if "Training run #" in line) 
 
