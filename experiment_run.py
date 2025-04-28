@@ -97,7 +97,7 @@ def main():
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
 
             for episode in range(num_episodes):
-                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {str(ep_violations_dict)}, Number of Violations: {num_violations}, Avoided Violations: {str(ep_avoided_violations_dict)}, Number of Avoided Violations: {num_avoided_violations}")
+                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Unavoided Violatons: {str(ep_violations_dict)}, Number of Violations: {num_violations}, Avoided Violations: {str(ep_avoided_violations_dict)}, Number of Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
                 episode_seed = experiment_seed * (10 ** len(str(abs(num_episodes)))) + episode
                 obs, _ = env.reset(seed=episode_seed) # <- seeded
@@ -135,11 +135,11 @@ def main():
             all_avoided_violations.append(num_avoided_violations)
             all_violations_dict.append(ep_violations_dict)
             all_avoided_violations_dict.append(ep_avoided_violations_dict)
-            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}, Violations: {str(all_violations_dict)}, Total Violations: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
+            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}, Unavoided Violatons: {str(all_violations_dict)}, Total Unavoided: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
 
         env.close()
         results[mode] = [all_collisions, all_violations, all_avoided_violations, all_violations_dict, all_avoided_violations_dict]
-        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {str(all_violations_dict)}, Total Violations: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
+        print(f"Results for {mode}: Collisions: {all_collisions}, Unavoided Violatons: {str(all_violations_dict)}, Total Unavoided: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
 
     # get count of string 'Training run #' in file
     count = 1
@@ -164,9 +164,9 @@ def main():
             
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
-            f.write(f"Total violations: {sum(violations)}\n")
-            f.write(f"Average violatoins by type: {average_by_presence(violations_dict)}\n")
-            f.write(f"Average total violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
+            f.write(f"Total unavoided violations: {sum(violations)}\n")
+            f.write(f"Average unavoided violatoins by type: {average_by_presence(violations_dict)}\n")
+            f.write(f"Average total unavoided violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
             f.write(f"Total avoided violations: {sum(avoided_violations)}\n")
             f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}\n")
             f.write(f"Average total avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
