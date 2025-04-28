@@ -40,7 +40,7 @@ class MetricsDrivenNorm(ABC):
         
         :param vehicle: the vehicle to check.
 
-        :return: True if the norm constraint is violated, False otherwise.
+        :return: True if the norm constraint is violations_dict, False otherwise.
         """
         pass
 
@@ -70,6 +70,10 @@ class MetricsDrivenNorm(ABC):
         )
         target_speed = vehicle.index_to_speed(target_speed_index)
         return target_speed
+    
+    def __str__(self):
+        """To string function."""
+        pass
 
 class SpeedingNorm(MetricsDrivenNorm):
     """Norm constraint for enforcing the speed limit."""
@@ -104,6 +108,10 @@ class SpeedingNorm(MetricsDrivenNorm):
             return target_speed > self.speed_limit
         # Check if the vehicle is already speeding and the action is not to slow down
         return self.is_violating_state(vehicle)
+    
+    def __str__(self):
+        """To string function."""
+        return "Speeding"
 
 class TailgatingNorm(MetricsDrivenNorm):
     """Norm constraint for enforcing a safe following distance."""
@@ -161,6 +169,10 @@ class TailgatingNorm(MetricsDrivenNorm):
             return self.is_violating_state(vehicle, lane_index, target_speed)
         # Check if the vehicle is already tailgating and not slowing down or changing lanes
         return self.is_violating_state(vehicle, lane_index)
+        
+    def __str__(self):
+        """To string function."""
+        return "Tailgating"
 
 class BrakingNorm(MetricsDrivenNorm):
     """Norm constraint for avoiding sudden braking."""
@@ -185,6 +197,10 @@ class BrakingNorm(MetricsDrivenNorm):
     def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
         return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
+    
+    def __str__(self):
+        """To string function."""
+        return "Braking"
 
 class LaneChangeNormProtocol(Protocol):
     """Protocol for lane change norm constraints."""
@@ -192,6 +208,10 @@ class LaneChangeNormProtocol(Protocol):
 
     def is_violating_action(self, action: Action, vehicle: MDPVehicle) -> bool:
         """Check if the action produces a lane change violation."""
+        pass
+
+    def __str__(self):
+        """To string function."""
         pass
 
 class LaneChangeNormMixin:
@@ -234,6 +254,10 @@ class LaneChangeNormMixin:
                     or super().is_violating_action(action, v_rear, target_lane_index))
         # If there is no vehicle behind, only check for violation to the vehicle ahead
         return super().is_violating_action(action, vehicle, target_lane_index)
+    
+    def __str__(self):
+        """To string function."""
+        return "LaneChange"
 
 class LaneChangeTailgatingNorm(LaneChangeNormMixin, TailgatingNorm):
     """Norm constraint for enforcing safe distances for lane changes."""
@@ -249,6 +273,10 @@ class LaneChangeTailgatingNorm(LaneChangeNormMixin, TailgatingNorm):
             ACTION_STRINGS["LANE_RIGHT"]
         ]
 
+    def __str__(self):
+        """To string function."""
+        return "LaneChangeTailgating"
+
 class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
     """Norm constraint for avoiding sudden braking due to lane changes."""
     def __init__(self, road: Road, min_ttc: float = 1.5):
@@ -262,3 +290,7 @@ class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]
         ]
+
+    def __str__(self):
+        """To string function."""
+        return "LaneChangeBraking"

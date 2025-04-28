@@ -53,21 +53,27 @@ class Supervisor:
     def count_state_norm_violations(self) -> int:
         """Return the number of norm violations for the given state."""
         violations = 0
+        violations_dict = {norm: 0 for norm in self.norms}
         for norm in self.norms:
             # Skip lane change norms, since they only apply to action violations
             if isinstance(norm, norms.LaneChangeNormProtocol):
                 continue
             elif norm.is_violating_state(self.env_unwrapped.vehicle):
                 violations += 1
-        return violations
+                violations_dict[norm] += 1
+
+        return violations, violations_dict
     
     def count_action_norm_violations(self, action: Action) -> int:
         """Return the number of norm violations for a given action."""
         violations = 0
+        violations_dict = {str(norm): 0 for norm in self.norms}
         for norm in self.norms:
             if norm.is_violating_action(action, self.env_unwrapped.vehicle):
                 violations += 1
-        return violations
+                violations_dict[str(norm)] += 1
+
+        return violations, violations_dict
 
     def decide_action(self, model: DQN, obs: Observation) -> Action:
         """Decide which action the agent should take to comply with norms.
@@ -79,27 +85,28 @@ class Supervisor:
 
         :return: norm-compliant action selection
         """ 
-        selected_action, _ = model.predict(obs, deterministic=True)
-        selected_action    = int(selected_action)
-        violations         = self.count_action_norm_violations(selected_action)
+        selected_action, _          = model.predict(obs, deterministic=True)
+        selected_action             = int(selected_action)
+        violations, violations_dict = self.count_action_norm_violations(selected_action)
         if self.verbose:
             print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
         if violations > 0:
             available_actions = self.env_unwrapped.action_type.get_available_actions()
             # If the agent's selected action violates any norms, manually select a compliant action
             if self.ACTION_STRINGS["SLOWER"] in available_actions:
-                action_override = self.ACTION_STRINGS["SLOWER"]
-                new_violations  = self.count_action_norm_violations(action_override)
+                action_override                     = self.ACTION_STRINGS["SLOWER"]
+                new_violations, new_violations_dict = self.count_action_norm_violations(action_override)
             else:
-                action_override = self.ACTION_STRINGS["IDLE"]
-                new_violations  = self.count_action_norm_violations(action_override)
+                action_override                     = self.ACTION_STRINGS["IDLE"]
+                new_violations, new_violations_dict = self.count_action_norm_violations(action_override)
             # Override the selected action if it reduces the number of violations
             if new_violations < violations:
-                selected_action = action_override
-                violations      = new_violations
+                selected_action  = action_override
+                violations       = new_violations
+                violations_dict  = new_violations_dict
         if self.verbose:
             print(f"New action: {self.ACTIONS_ALL[selected_action]} | Norm Violations: {violations}")
-        return selected_action, violations
+        return selected_action, violations, violations_dict
         
     def _decide_action(self, model: DQN, obs: Observation) -> tuple[Action, int]:
         """Decide which action the agent should take to comply with norms.
