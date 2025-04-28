@@ -19,7 +19,7 @@ def list_models(models_dir="models"):
     return list_files(models_dir, ".zip")
 
 def get_output_filename(default="results.txt"):
-    fname = input(f"Enter output filename [{default}]: ").strip()
+    fname = input(f"Enter output filename [{default}]: ").strip() + '.txt'
     return fname if fname else default
 
 def count_by_presence(a_dict, b_dict):
@@ -174,6 +174,6 @@ def main():
             f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}\n")
             f.write(f"Average total avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
 
-    print("Results written to results.txt")
+    print(f"Results written to {output_file}.txt")
 if __name__ == "__main__":
     main()
