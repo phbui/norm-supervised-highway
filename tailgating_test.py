@@ -31,13 +31,46 @@ class RandomBrakingVehicle(IDMVehicle):
     """A vehicle that randomly brakes to simulate unpredictable behavior with more abrupt braking."""
     
     def __init__(self, road, position, heading=0, speed=0):
+        # Call the parent class constructor first
         super().__init__(road, position, heading, speed)
-        self.braking_probability = 0.005  # Probability of random braking per step
+        
+        # Initialize target_speed and other attributes
+        self.target_speed = speed if speed > 0 else 20  # Default to 20 if speed is 0
+        self.normal_target_speed = self.target_speed  # Now safe to use
+        self.braking_probability = 0.02  # Probability of random braking per step
         self.braking_duration = 5  # Shorter duration of braking in steps (was 15)
         self.braking_counter = 0
-        self.normal_target_speed = self.target_speed
         self.braking_deceleration = -10  # Stronger deceleration when braking (was -5)
+    
+    @classmethod
+    def create_from(cls, vehicle):
+        """
+        Create a new vehicle identical to the given vehicle.
+        Overridden to handle the target_lane_index parameter.
+        """
+        v = cls(
+            vehicle.road,
+            vehicle.position,
+            heading=vehicle.heading,
+            speed=vehicle.speed
+        )
         
+        # Copy relevant attributes after initialization
+        if hasattr(vehicle, 'target_speed'):
+            v.target_speed = vehicle.target_speed
+        if hasattr(vehicle, 'normal_target_speed'):
+            v.normal_target_speed = vehicle.normal_target_speed
+        else:
+            v.normal_target_speed = v.target_speed
+        
+        # Copy other important attributes
+        v.braking_counter = getattr(vehicle, 'braking_counter', 0)
+        v.braking_probability = getattr(vehicle, 'braking_probability', 0.02)
+        v.braking_duration = getattr(vehicle, 'braking_duration', 5)
+        v.braking_deceleration = getattr(vehicle, 'braking_deceleration', -10)
+        
+        return v
+    
     def act(self, action=None):
         # If currently braking, continue for the duration
         if self.braking_counter > 0:
@@ -54,7 +87,6 @@ class RandomBrakingVehicle(IDMVehicle):
             
         # Call the parent class act method
         return super().act(action)
-
 
 class CustomHighwayEnv(HighwayEnv):
     """
@@ -103,7 +135,7 @@ class CustomHighwayEnv(HighwayEnv):
             "custom_vehicle_placement": True,
             "vehicle_positions": [
                 # Braking lead cars in ego's lane (lane 1)
-                {"lane": 1, "position": 40, "speed": 23, "vehicle_type": "braking_car"},
+                
                 {"lane": 1, "position": 80, "speed": 23, "vehicle_type": "braking_car"},
                 {"lane": 1, "position": 120, "speed": 23, "vehicle_type": "braking_car"},
                 
@@ -219,7 +251,6 @@ register(
 )
 
 pygame.init()
-
 def main():
     # Select model
     model_files = list_models()
@@ -260,8 +291,6 @@ def main():
         all_collisions = []
         all_violations = []
         all_avoided_violations = []
-        all_violations_dict = []
-        all_avoided_violations_dict = []
 
         for experiment in range(num_experiments):
             experiment_seed = BASE_SEED * (10 ** len(str(abs(num_experiments)))) + experiment
@@ -272,53 +301,48 @@ def main():
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make("custom-highway-v0", render_mode="human")
             supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
-            ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
-            ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
 
             for episode in range(num_episodes):
-                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {str(ep_violations_dict)}, Number of Violations: {num_violations}, Avoided Violations: {str(ep_avoided_violations_dict)}, Number of Avoided Violations: {num_avoided_violations}")
+                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
                 done = truncated = False
                 episode_seed = experiment_seed * (10 ** len(str(abs(num_episodes)))) + episode
                 obs, _ = env.reset(seed=episode_seed) # <- seeded
                 supervisor.reset_norms()
                 while not (done or truncated):
                     action, _  = model.predict(obs, deterministic=True)
-                    violations, violations_dict = supervisor.count_action_norm_violations(action)
+                    violations = supervisor.count_action_norm_violations(action)
 
                     if mode == "WITH SUPERVISOR":
                         # Select new action and compute number of avoided violations
-                        new_action, new_violations, new_violations_dict = supervisor.decide_action(model, obs)
-                        avoided                 = violations - new_violations
-                        avoided_violations_dict = {norm: violations_dict.get(norm, 0) - new_violations_dict.get(norm, 0) for norm in set(violations_dict) | set(new_violations_dict)}
-                        action                  = new_action
-                        violations              = new_violations
-                        violations_dict         = new_violations_dict
+                        new_action, new_violations = supervisor.decide_action(model, obs)
+                        avoided    = violations - new_violations
+                        action     = new_action
+                        violations = new_violations
                     else:
                         avoided = 0
 
                     num_violations         += violations
                     num_avoided_violations += avoided
-                    count_by_presence(ep_violations_dict, violations_dict)
-                    count_by_presence(ep_avoided_violations_dict, avoided_violations_dict)
 
                     obs, reward, done, truncated, info = env.step(action)
-
+                    env.render()
+                    pygame.event.pump()  # Process events
+                    time.sleep(0.05)  # Add a small delay to make animation visible
                     if done or truncated:
                         if info["crashed"]:
                             num_collision += 1
-
+                
+                    
                 # env.render()  # Uncomment if you want to render the environment
 
             all_collisions.append(num_collision)
             all_violations.append(num_violations)
             all_avoided_violations.append(num_avoided_violations)
-            all_violations_dict.append(violations_dict)
-            all_avoided_violations_dict.append(avoided_violations_dict)
-            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}, Violations: {str(all_violations_dict)}, Total Violations: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
+            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}. Violations: {num_violations}, Avoided Violations: {num_avoided_violations}")
 
         env.close()
-        results[mode] = [all_collisions, all_violations, all_avoided_violations, all_violations_dict, all_avoided_violations_dict]
-        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {str(all_violations_dict)}, Total Violations: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
+        results[mode] = [all_collisions, all_violations, all_avoided_violations]
+        print(f"Results for {mode}: Collisions: {all_collisions}, Violations: {all_violations}, Avoided Violations: {all_avoided_violations}")
 
     # get count of string 'Training run #' in file
     count = 1
@@ -338,19 +362,15 @@ def main():
         f.write(f"Experiments: {num_experiments}\n")
         f.write(f"Episodes: {num_episodes}\n\n")
 
-        for mode, [collisions, violations, avoided_violations, violations_dict, avoided_violations_dict] in results.items():
+        for mode, [collisions, violations, avoided_violations] in results.items():
             f.write(f"{mode}\n")
             
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
-            f.write(f"Violations: {str(violations_dict)}\n")
-            f.write(f"Total violations: {sum(violations)}\n")
-            f.write(f"Average violatoins by type: {average_by_presence(violations_dict)}")
-            f.write(f"Average total violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
-            f.write(f"Avoided violations: {str(avoided_violations_dict)}\n")
-            f.write(f"Total avoided violations: {sum(avoided_violations)}\n")
-            f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}")
-            f.write(f"Average total avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
+            f.write(f"Violations: {sum(violations)}\n")
+            f.write(f"Average violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
+            f.write(f"Avoided violations: {sum(avoided_violations)}\n")
+            f.write(f"Average avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
 
     print("Results written to results.txt")
 if __name__ == "__main__":
