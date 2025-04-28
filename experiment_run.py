@@ -129,8 +129,8 @@ def main():
             all_collisions.append(num_collision)
             all_violations.append(num_violations)
             all_avoided_violations.append(num_avoided_violations)
-            all_violations_dict.append(violations_dict)
-            all_avoided_violations_dict.append(avoided_violations_dict)
+            all_violations_dict.append(ep_violations_dict)
+            all_avoided_violations_dict.append(ep_avoided_violations_dict)
             print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}, Violations: {str(all_violations_dict)}, Total Violations: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}")
 
         env.close()
@@ -160,13 +160,11 @@ def main():
             
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
-            f.write(f"Violations: {str(violations_dict)}\n")
             f.write(f"Total violations: {sum(violations)}\n")
-            f.write(f"Average violatoins by type: {average_by_presence(violations_dict)}")
+            f.write(f"Average violatoins by type: {average_by_presence(violations_dict)}\n")
             f.write(f"Average total violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
-            f.write(f"Avoided violations: {str(avoided_violations_dict)}\n")
             f.write(f"Total avoided violations: {sum(avoided_violations)}\n")
-            f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}")
+            f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}\n")
             f.write(f"Average total avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
 
     print("Results written to results.txt")
