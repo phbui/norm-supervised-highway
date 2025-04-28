@@ -11,14 +11,16 @@ BASE_SEED = 239
 def list_files(directory, extension=".json"):
     return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
 
-
 def load_config(config_path):
     with open(config_path, "r") as f:
         return json.load(f)
 
-
 def list_models(models_dir="models"):
     return list_files(models_dir, ".zip")
+
+def get_output_filename(default="results.txt"):
+    fname = input(f"Enter output filename [{default}]: ").strip()
+    return fname if fname else default
 
 def count_by_presence(a_dict, b_dict):
     for norm, delta in b_dict.items():
@@ -63,6 +65,8 @@ def main():
     env_index = int(input("Select an environment config by number: "))
     env_config_path = os.path.join("configs/environment", env_configs[env_index])
     env_config = load_config(env_config_path)
+
+    output_file = get_output_filename()
 
     print(f"\nLoading model from {model_path}...")
     model = DQN.load(model_path)
@@ -144,7 +148,7 @@ def main():
         count += sum(1 for line in lines if "Training run #" in line) 
 
     # Write results to a file
-    with open("results.txt", "a") as f:
+    with open(output_file, "a") as f:
 
         f.write(f"######## Training run #{count} ############\n")
         f.write(f"Model: {model_files[model_index]}:\n")
