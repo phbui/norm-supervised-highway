@@ -20,10 +20,6 @@ BASE_SEED = 239
 def list_files(directory, extension=".json"):
     return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
 
-def load_config(config_path):
-    with open(config_path, "r") as f:
-        return json.load(f)
-
 def list_models(models_dir="models"):
     return list_files(models_dir, ".zip")
 
@@ -286,20 +282,6 @@ def main():
     # model_index = 1 # uncomment to harcode model, comment next line
     model_index = int(input("Select a model to run by number: ")) 
     model_path = os.path.join("models", model_files[model_index])
-
-    env_configs = list_files("configs/environment")
-    if not env_configs:
-        print("No environment config files found in 'configs/environment/' directory.")
-        return
-
-    print("\nAvailable environment configs:")
-    for i, f in enumerate(env_configs):
-        print(f"[{i}] {f}")
-    # env_index = 2 # uncomment to harcode env, comment next line1
-    env_index = int(input("Select an environment config by number: "))
-    env_config_path = os.path.join("configs/environment", env_configs[env_index])
-    env_config = load_config(env_config_path)
-
     output_file = get_output_filename()
 
     print(f"\nLoading model from {model_path}...")
@@ -324,9 +306,8 @@ def main():
             num_collision = 0
             num_violations = 0
             num_avoided_violations = 0
-            print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("custom-highway-v0", render_mode="human")
-            supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
+            env = gymnasium.make("custom-highway-v0", render_mode="rgb_array")
+            supervisor = Supervisor(env.unwrapped, CustomHighwayEnv.default_config(), verbose=False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
 
@@ -389,10 +370,6 @@ def main():
 
         f.write(f"######## Training run #{count} ############\n")
         f.write(f"Model: {model_files[model_index]}:\n")
-        f.write(f"Environment config: {env_configs[env_index]}:\n")
-        f.write(f"Lanes: {env_config['lanes_count']}\n")
-        f.write(f"Vehicles: {env_config['vehicles_count']}\n")
-        f.write(f"Duration: {env_config['duration']}\n")
         f.write(f"Experiments: {num_experiments}\n")
         f.write(f"Episodes: {num_episodes}\n\n")
 
