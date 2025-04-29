@@ -119,7 +119,7 @@ class CustomHighwayEnv(HighwayEnv):
                 "type": "DiscreteMetaAction"
             },
             "lanes_count": 4,
-            "vehicles_count": 30,  # Increased from 20
+            "vehicles_count": 23,
             "duration": 100,
             "initial_spacing": 2,
             "collision_reward": -1,
