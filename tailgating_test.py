@@ -97,7 +97,6 @@ class RandomBrakingVehicle(IDMVehicle):
         # Otherwise, check if we should start braking
         elif random.random() < self.braking_probability:
             self.braking_counter = self.braking_duration
-            print("Lead vehicle braking!")
         else:
             # Normal driving
             self.target_speed = self.normal_target_speed

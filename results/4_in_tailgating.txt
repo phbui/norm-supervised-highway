@@ -1,0 +1,27 @@
+######## Training run #1 ############
+Model: trained_30_duration_4_lanes_20_vehicles.zip:
+Experiments: 5
+Episodes: 100
+
+WITH SUPERVISOR
+Collisions: 103
+Average collisions: 20.60 (2.15)
+Total unavoided violations: 7923
+Average unavoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 1016.6, 'Braking': 0.0, 'LaneChangeTailgating': 568.0, 'LaneChangeBraking': 0.0}
+Average total unavoided violations: 1584.60 (54.84) 
+
+Total avoided violations: 12013
+Average avoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 826.0, 'Braking': 3.0, 'LaneChangeTailgating': 1571.2, 'LaneChangeBraking': 2.4}
+Average total avoided violations: 2402.60 (86.42) 
+
+WITHOUT SUPERVISOR
+Collisions: 500
+Average collisions: 100.00 (0.00)
+Total unavoided violations: 1004
+Average unavoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 200.8, 'LaneChangeBraking': 0.0}
+Average total unavoided violations: 200.80 (0.75) 
+
+Total avoided violations: 0
+Average avoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
+Average total avoided violations: 0.00 (0.00) 
+
