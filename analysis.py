@@ -5,10 +5,10 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 
 plt.rcParams.update({
-    'font.size': 20,             # base font size for everything
-    'axes.titlesize': 20,        # subplot titles
-    'axes.labelsize': 20,        # x/y labels
-    'xtick.labelsize': 20,       # tick labels
+    'font.size': 20,
+    'axes.titlesize': 20,
+    'axes.labelsize': 20,
+    'xtick.labelsize': 20,
     'ytick.labelsize': 20,
     'legend.fontsize': 20,
     'legend.title_fontsize': 20
@@ -17,11 +17,11 @@ plt.rcParams.update({
 RESULTS_DIR = "results"
 OUTPUT_DIR = "analysis"
 OUTPUT_FILE = "comparison.png"
+LEGEND_FILE = "legend.png"
 
-# Custom label mappings
 PREFIX_LABELS = {
-    "2_": "Trained for 2 Lanes & 5 Vehicles",
-    "4_": "Trained for 4 Lanes & 20 Vehicles"
+    "2_": "2 Lanes & 5 Vehicles Model",
+    "4_": "4 Lanes & 20 Vehicles Model"
 }
 SCENARIO_LABELS = {
     "in_2": "2 Lanes & 5 Vehicles Scenario",
@@ -31,14 +31,10 @@ SCENARIO_LABELS = {
     "in_tailgating": "Tailgating Scenario"
 }
 
-
 def list_files(directory, extension=".txt"):
-    """Return sorted .txt files in a directory."""
-    return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
-
+    return sorted(f for f in os.listdir(directory) if f.endswith(extension))
 
 def parse_results(path):
-    """Parse a results file and extract key metrics into a flat dict per mode."""
     data = {}
     mode = None
     with open(path) as f:
@@ -59,12 +55,11 @@ def parse_results(path):
                     if m: data[mode]["TotalAvoided"] = float(m.group(1))
                 elif mode == "WITHOUT SUPERVISOR" and "Average unavoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
-                    for k,v in d.items(): data[mode][k] = float(v)
+                    for k, v in d.items(): data[mode][k] = float(v)
                 elif mode == "WITH SUPERVISOR" and "Average avoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
-                    for k,v in d.items(): data[mode][k] = float(v)
+                    for k, v in d.items(): data[mode][k] = float(v)
     return data
-
 
 def analyze():
     files = list_files(RESULTS_DIR)
@@ -74,31 +69,26 @@ def analyze():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    prefixes = sorted({fn.split('_')[0] + '_' for fn in files})
+    prefixes  = sorted({fn.split('_')[0] + '_' for fn in files})
     scenarios = sorted({fn.split('_',1)[1].rsplit('.txt',1)[0] for fn in files})
-    modes = ["WITHOUT SUPERVISOR", "WITH SUPERVISOR"]
+    modes     = ["WITHOUT SUPERVISOR", "WITH SUPERVISOR"]
 
-    # Collect data
     vals = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     for fn in files:
         pf = fn.split('_',1)[0] + '_'
         sc = fn.split('_',1)[1].rsplit('.txt',1)[0]
-        data = parse_results(os.path.join(RESULTS_DIR, fn))
-        for mode in modes:
-            for metric, v in data.get(mode, {}).items():
+        for mode, metrics in parse_results(os.path.join(RESULTS_DIR, fn)).items():
+            for metric, v in metrics.items():
                 vals[sc][mode][metric][pf] = v
 
-    # Determine max metrics count for scaling
     max_metrics = max(len(vals[sc][mode]) for sc in scenarios for mode in modes)
-    # Dynamic figure size
     cols = len(modes)
     rows = len(scenarios)
     fig_width  = cols * max(6, max_metrics * 0.2)
     fig_height = rows * 6
 
     fig, axes = plt.subplots(
-        rows,
-        cols,
+        rows, cols,
         figsize=(fig_width, fig_height),
         squeeze=False,
         sharey='row',
@@ -113,30 +103,32 @@ def analyze():
             x = range(len(metrics))
             n = len(prefixes)
             width = 0.8 / n
+
             for k, pf in enumerate(prefixes):
-                heights = [vals[sc][mode].get(met, {}).get(pf, 0) for met in metrics]
+                heights   = [vals[sc][mode].get(met, {}).get(pf, 0) for met in metrics]
                 positions = [pos + k * width for pos in x]
                 label = PREFIX_LABELS.get(pf) if (i == 0 and j == 0) else None
                 ax.bar(positions, heights, width, label=label)
 
             ax.set_yscale('log')
-            centers = [pos + (n - 1) * width / 2 for pos in x]
+            centers = [pos + (n-1)*width/2 for pos in x]
             ax.set_xticks(centers)
             ax.set_xticklabels(metrics, rotation=45, ha='right')
             ax.set_title(f"{sc_label}\n({mode})")
             if j == 0:
                 ax.set_ylabel('Avg Values (log-scale)')
-            if i == 0 and j == 0:
-                ax.legend(title='Model Prefix')
 
-    # Save figure with lower DPI only
     save_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
-    fig.savefig(
-        save_path,
-        dpi=150
-    )
-    print(f"Saved comparison plot to {save_path}")
+    fig.savefig(save_path, dpi=150)
 
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    legend_fig = plt.figure(figsize=(4, 4))
+    legend_fig.legend(handles, labels, title='Model Prefix', loc='center')
+    legend_path = os.path.join(OUTPUT_DIR, LEGEND_FILE)
+    legend_fig.savefig(legend_path, dpi=150, bbox_inches='tight')
+
+    print(f"Saved comparison plot to {save_path}")
+    print(f"Saved legend to {legend_path}")
 
 if __name__ == '__main__':
     analyze()
