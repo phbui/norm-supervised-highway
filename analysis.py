@@ -4,6 +4,16 @@ import ast
 from collections import defaultdict
 import matplotlib.pyplot as plt
 
+plt.rcParams.update({
+    'font.size': 20,             # base font size for everything
+    'axes.titlesize': 20,        # subplot titles
+    'axes.labelsize': 20,        # x/y labels
+    'xtick.labelsize': 20,       # tick labels
+    'ytick.labelsize': 20,
+    'legend.fontsize': 20,
+    'legend.title_fontsize': 20
+})
+
 RESULTS_DIR = "results"
 OUTPUT_DIR = "analysis"
 OUTPUT_FILE = "comparison.png"
@@ -83,14 +93,17 @@ def analyze():
     # Dynamic figure size
     cols = len(modes)
     rows = len(scenarios)
-    fig_width = cols * max(6, max_metrics * 0.6)
-    fig_height = rows * 4
+    fig_width  = cols * max(6, max_metrics * 0.2)
+    fig_height = rows * 6
 
-    fig, axes = plt.subplots(rows, cols,
-                             figsize=(fig_width, fig_height),
-                             squeeze=False,
-                             sharey='row',
-                             constrained_layout=True)
+    fig, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(fig_width, fig_height),
+        squeeze=False,
+        sharey='row',
+        constrained_layout=True
+    )
 
     for i, sc in enumerate(scenarios):
         sc_label = SCENARIO_LABELS.get(sc, sc)
@@ -102,23 +115,26 @@ def analyze():
             width = 0.8 / n
             for k, pf in enumerate(prefixes):
                 heights = [vals[sc][mode].get(met, {}).get(pf, 0) for met in metrics]
-                positions = [pos + k*width for pos in x]
-                label = PREFIX_LABELS.get(pf) if (i==0 and j==0) else None
+                positions = [pos + k * width for pos in x]
+                label = PREFIX_LABELS.get(pf) if (i == 0 and j == 0) else None
                 ax.bar(positions, heights, width, label=label)
 
             ax.set_yscale('log')
-            centers = [pos + (n-1)*width/2 for pos in x]
+            centers = [pos + (n - 1) * width / 2 for pos in x]
             ax.set_xticks(centers)
-            ax.set_xticklabels(metrics, rotation=45, ha='right', fontsize=8)
-            ax.set_title(f"{sc_label}\n({mode})", fontsize=10)
+            ax.set_xticklabels(metrics, rotation=45, ha='right')
+            ax.set_title(f"{sc_label}\n({mode})")
             if j == 0:
-                ax.set_ylabel('Avg Values (log-scale)', fontsize=9)
+                ax.set_ylabel('Avg Values (log-scale)')
             if i == 0 and j == 0:
-                ax.legend(title='Model Prefix', fontsize=8, title_fontsize=9)
+                ax.legend(title='Model Prefix')
 
-    # Save figure
+    # Save figure with lower DPI only
     save_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
-    fig.savefig(save_path, dpi=300)
+    fig.savefig(
+        save_path,
+        dpi=150
+    )
     print(f"Saved comparison plot to {save_path}")
 
 
