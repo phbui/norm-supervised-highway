@@ -5,6 +5,8 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 
 RESULTS_DIR = "results"
+OUTPUT_DIR = "analysis"
+OUTPUT_FILE = "comparison.png"
 
 # Custom label mappings
 PREFIX_LABELS = {
@@ -48,11 +50,11 @@ def parse_results(path):
                 elif line.startswith("Average total avoided violations:"):
                     m = re.search(r"Average total avoided violations:\s*([\d\.]+)", line)
                     if m: data[mode]["TotalAvoided"] = float(m.group(1))
-                # Per-type unavoided
+                # Per-type unavoided violations
                 elif mode == "WITHOUT SUPERVISOR" and "Average unavoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
                     for k,v in d.items(): data[mode][k] = float(v)
-                # Per-type avoided
+                # Per-type avoided violations
                 elif mode == "WITH SUPERVISOR" and "Average avoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
                     for k,v in d.items(): data[mode][k] = float(v)
@@ -65,7 +67,10 @@ def analyze():
         print(f"No .txt files found in '{RESULTS_DIR}/'.")
         return
 
-    # Determine unique prefixes and scenarios
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Collect unique prefixes and scenarios
     prefixes = sorted({fn.split('_')[0] + '_' for fn in files})
     scenarios = sorted({fn.split('_',1)[1].rsplit('.txt',1)[0] for fn in files})
     modes = ["WITHOUT SUPERVISOR", "WITH SUPERVISOR"]
@@ -89,11 +94,9 @@ def analyze():
     fig, axes = plt.subplots(rows, cols, figsize=(cols*6, rows*4), squeeze=False)
 
     for i, sc in enumerate(scenarios):
-        # Apply scenario label
         sc_label = SCENARIO_LABELS.get(sc, sc)
         for j, mode in enumerate(modes):
             ax = axes[i][j]
-            # Collect metrics for this scenario/mode
             m_list = sorted(vals[sc][mode].keys())
             x = range(len(m_list))
             n = len(prefixes)
@@ -101,7 +104,6 @@ def analyze():
             for k, pf in enumerate(prefixes):
                 heights = [vals[sc][mode].get(met, {}).get(pf, 0) for met in m_list]
                 positions = [pos + k*width for pos in x]
-                # Map prefix label
                 pf_label = PREFIX_LABELS.get(pf, pf)
                 label = pf_label if i==0 and j==0 else None
                 ax.bar(positions, heights, width, label=label)
@@ -112,12 +114,15 @@ def analyze():
             ax.set_xticklabels(m_list, rotation=45, ha='right', fontsize=8)
             ax.set_title(f"{sc_label} ({mode})", fontsize=10)
             if j==0:
-                ax.set_ylabel('Avg Values (log-scale)', fontsize=9)
+                ax.set_ylabel('Average Values (log-scale)', fontsize=9)
             if i==0 and j==0:
                 ax.legend(title='Model Prefix', fontsize=8, title_fontsize=9)
 
     plt.tight_layout()
-    plt.show()
+    # Save figure
+    save_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
+    fig.savefig(save_path)
+    print(f"Saved comparison plot to {save_path}")
 
 
 if __name__ == '__main__':
