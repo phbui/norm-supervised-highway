@@ -38,23 +38,18 @@ def parse_results(path):
                 mode = line
                 data[mode] = {}
             elif mode:
-                # Average collisions
                 if line.startswith("Average collisions:"):
                     m = re.search(r"Average collisions:\s*([\d\.]+)", line)
                     if m: data[mode]["Collisions"] = float(m.group(1))
-                # Average total unavoided violations
                 elif line.startswith("Average total unavoided violations:"):
                     m = re.search(r"Average total unavoided violations:\s*([\d\.]+)", line)
                     if m: data[mode]["TotalUnavoided"] = float(m.group(1))
-                # Average total avoided violations
                 elif line.startswith("Average total avoided violations:"):
                     m = re.search(r"Average total avoided violations:\s*([\d\.]+)", line)
                     if m: data[mode]["TotalAvoided"] = float(m.group(1))
-                # Per-type unavoided violations
                 elif mode == "WITHOUT SUPERVISOR" and "Average unavoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
                     for k,v in d.items(): data[mode][k] = float(v)
-                # Per-type avoided violations
                 elif mode == "WITH SUPERVISOR" and "Average avoided violatoins by type:" in line:
                     d = ast.literal_eval(line.split(":",1)[1].strip())
                     for k,v in d.items(): data[mode][k] = float(v)
@@ -67,18 +62,14 @@ def analyze():
         print(f"No .txt files found in '{RESULTS_DIR}/'.")
         return
 
-    # Ensure output directory exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Collect unique prefixes and scenarios
     prefixes = sorted({fn.split('_')[0] + '_' for fn in files})
     scenarios = sorted({fn.split('_',1)[1].rsplit('.txt',1)[0] for fn in files})
     modes = ["WITHOUT SUPERVISOR", "WITH SUPERVISOR"]
 
-    # Organize values: vals[scenario][mode][metric][prefix]
+    # Collect data
     vals = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
-    metrics = set()
-
     for fn in files:
         pf = fn.split('_',1)[0] + '_'
         sc = fn.split('_',1)[1].rsplit('.txt',1)[0]
@@ -86,42 +77,48 @@ def analyze():
         for mode in modes:
             for metric, v in data.get(mode, {}).items():
                 vals[sc][mode][metric][pf] = v
-                metrics.add(metric)
 
-    # Plot: one row per scenario, two columns per mode
-    rows = len(scenarios)
+    # Determine max metrics count for scaling
+    max_metrics = max(len(vals[sc][mode]) for sc in scenarios for mode in modes)
+    # Dynamic figure size
     cols = len(modes)
-    fig, axes = plt.subplots(rows, cols, figsize=(cols*6, rows*4), squeeze=False)
+    rows = len(scenarios)
+    fig_width = cols * max(6, max_metrics * 0.6)
+    fig_height = rows * 4
+
+    fig, axes = plt.subplots(rows, cols,
+                             figsize=(fig_width, fig_height),
+                             squeeze=False,
+                             sharey='row',
+                             constrained_layout=True)
 
     for i, sc in enumerate(scenarios):
         sc_label = SCENARIO_LABELS.get(sc, sc)
         for j, mode in enumerate(modes):
             ax = axes[i][j]
-            m_list = sorted(vals[sc][mode].keys())
-            x = range(len(m_list))
+            metrics = sorted(vals[sc][mode].keys())
+            x = range(len(metrics))
             n = len(prefixes)
             width = 0.8 / n
             for k, pf in enumerate(prefixes):
-                heights = [vals[sc][mode].get(met, {}).get(pf, 0) for met in m_list]
+                heights = [vals[sc][mode].get(met, {}).get(pf, 0) for met in metrics]
                 positions = [pos + k*width for pos in x]
-                pf_label = PREFIX_LABELS.get(pf, pf)
-                label = pf_label if i==0 and j==0 else None
+                label = PREFIX_LABELS.get(pf) if (i==0 and j==0) else None
                 ax.bar(positions, heights, width, label=label)
 
             ax.set_yscale('log')
             centers = [pos + (n-1)*width/2 for pos in x]
             ax.set_xticks(centers)
-            ax.set_xticklabels(m_list, rotation=45, ha='right', fontsize=8)
-            ax.set_title(f"{sc_label} ({mode})", fontsize=10)
-            if j==0:
-                ax.set_ylabel('Average Values (log-scale)', fontsize=9)
-            if i==0 and j==0:
+            ax.set_xticklabels(metrics, rotation=45, ha='right', fontsize=8)
+            ax.set_title(f"{sc_label}\n({mode})", fontsize=10)
+            if j == 0:
+                ax.set_ylabel('Avg Values (log-scale)', fontsize=9)
+            if i == 0 and j == 0:
                 ax.legend(title='Model Prefix', fontsize=8, title_fontsize=9)
 
-    plt.tight_layout()
     # Save figure
     save_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
-    fig.savefig(save_path)
+    fig.savefig(save_path, dpi=300)
     print(f"Saved comparison plot to {save_path}")
 
 
