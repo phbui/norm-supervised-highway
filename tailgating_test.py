@@ -127,7 +127,7 @@ class CustomHighwayEnv(HighwayEnv):
             },
             "lanes_count": 4,
             "vehicles_count": 23,
-            "duration": 100,
+            "duration": 30,
             "initial_spacing": 2,
             "collision_reward": -1,
             "reward_speed_range": [20, 30],
@@ -289,18 +289,6 @@ def main():
     model_index = int(input("Select a model to run by number: ")) 
     model_path = os.path.join("models", model_files[model_index])
 
-    env_configs = list_files("configs/environment")
-    if not env_configs:
-        print("No environment config files found in 'configs/environment/' directory.")
-        return
-
-    print("\nAvailable environment configs:")
-    for i, f in enumerate(env_configs):
-        print(f"[{i}] {f}")
-    # env_index = 2 # uncomment to harcode env, comment next line1
-    env_index = int(input("Select an environment config by number: "))
-    env_config_path = os.path.join("configs/environment", env_configs[env_index])
-    env_config = load_config(env_config_path)
 
     output_file = get_output_filename()
 
@@ -328,8 +316,8 @@ def main():
             num_collision = 0
             num_violations = 0
             num_avoided_violations = 0
-            print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
+            env_config = CustomHighwayEnv.default_config()
+            env = gymnasium.make("custom-highway-v0", render_mode="rgb_array")
             supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -431,7 +419,7 @@ def main():
 
         f.write(f"######## Training run #{count} ############\n")
         f.write(f"Model: {model_files[model_index]}:\n")
-        f.write(f"Environment config: {env_configs[env_index]}:\n")
+        f.write(f"Environment config: Custom:\n")
         f.write(f"Lanes: {env_config['lanes_count']}\n")
         f.write(f"Vehicles: {env_config['vehicles_count']}\n")
         f.write(f"Duration: {env_config['duration']}\n")
