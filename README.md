@@ -24,16 +24,9 @@ Results in the HighwayEnv simulator show 85–90% fewer collisions in training s
 - **Evaluate with supervision**: run the evaluation script pointing to the trained model and norm configuration  
 - **Zero‑shot tests**: supply a custom scenario file to the evaluation script  
 
-## Configuration
-
-Adjust norm thresholds and toggles in `config/default_norms.yml`, including:  
-- `speed_limit` (max vehicle speed in m/s)  
-- `ttc_threshold` (time‑to‑collision in seconds)  
-- `response_time`, `a_max`, `a_min` for safe following distance  
-
 ## Outputs
 
-Evaluation logs, metrics (collision counts, avoided vs. unavoided violations), and plots are saved under `experiments/results/`.
+Evaluation logs, metrics (collision counts, avoided vs. unavoided violations), and plots are saved under `results/` and `analsys/` respectively.
 
 ## License
 
