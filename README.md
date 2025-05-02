@@ -24,9 +24,13 @@ Results in the HighwayEnv simulator show 85–90% fewer collisions in training s
 - **Evaluate with supervision**: run the evaluation script pointing to the trained model and norm configuration  
 - **Zero‑shot tests**: supply a custom scenario file to the evaluation script  
 
+## Training Loops 
+Execute `experiment_run.py` for primary 2L5V and 4L20V scenarios. Execute `adversarial_test.py` for custom scenario.
+
 ## Outputs
 
-Evaluation logs, metrics (collision counts, avoided vs. unavoided violations), and plots are saved under `results/` and `analsys/` respectively.
+Evaluation logs, metrics (collision counts, avoided vs. unavoided violations), and plots are saved under `results/` and `analysis/` respectively. 
+
 
 ## License
 
