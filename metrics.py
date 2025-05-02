@@ -95,7 +95,12 @@ def calculate_safe_distance(speed: float, action_type: DiscreteMetaAction,
     gamma = 0.5 * speed ** 2 / decc_min
     return alpha * step_size ** 2 + beta * step_size + gamma
 
-def calculate_safety_score(reward: float, penalty: float, distance: float, safe_distance: float) -> float:
+def calculate_safety_score(
+        distance: float,
+        safe_distance: float,
+        reward: float = 1.0,
+        penalty: float = 1.0
+    ) -> float:
     """
     Calculate the safety score as defined by Zhao et al. (2020).
 
@@ -106,7 +111,10 @@ def calculate_safety_score(reward: float, penalty: float, distance: float, safe_
 
     :return: the safety score
     """
-    if distance > safe_distance:
+    # Safety score is not defined if there is no leading vehicle
+    if distance == np.inf:
+        return np.nan
+    elif distance > safe_distance:
         return reward * (distance - safe_distance)
     else:
         return penalty * (distance - safe_distance)
