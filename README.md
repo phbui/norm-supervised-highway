@@ -1,35 +1,28 @@
-# Norm‑Supervised‑Highway
+# Metrics‑Driven Normative Supervision for Safe Reinforcement Learning in Autonomous Driving
 
-**Metrics‑Driven Normative Supervision for Safe RL in Autonomous Driving**
+This project implements a metrics-driven normative supervisor, which augments the actions of a pretrained DQN agent to enforce driving norms and safety constraints. The agent is trained and tested in the [HighwayEnv](https://github.com/Farama-Foundation/HighwayEnv/tree/master) simulation environment using the configurations under the `configs` directory.
 
-## Overview
+## Getting Started
 
-This project implements a non‑learned supervisory layer around a pretrained DQN agent to enforce driving norms:
-- Speed limits  
-- Safe following distance  
-- Gentle braking  
-- Safe lane changes  
-
-Results in the HighwayEnv simulator show 85–90% fewer collisions in training scenarios and robust zero‑shot performance in novel traffic settings.
-
-## Installation
-
-1. Clone the repository: https://github.com/phbui/norm-supervised-highway.git  
-2. Create and activate a Python virtual environment  
-3. Install dependencies from `requirements.txt`  
+After cloning the repository, set up a virtual environment and install the required packages:
+ 
+     virtualenv venv
+     source venv/bin/activate
+     pip install -r requirements.txt
 
 ## Usage
 
-- **Train without supervision**: run the training script with environment `highway-v0`, DQN algorithm, and desired timesteps  
-- **Evaluate with supervision**: run the evaluation script pointing to the trained model and norm configuration  
-- **Zero‑shot tests**: supply a custom scenario file to the evaluation script  
+- To run one of our pretrained agents without normative supervision, execute the `run.py` script.
 
-## Training Loops 
-Execute `experiment_run.py` for primary 2L5V and 4L20V scenarios. Execute `adversarial_test.py` for custom scenario.
+- To reproduce the nominal and zero-shot results from our paper, including the normative supervisor, run the `experiment_run.py` script and select your desired model and scenario configuration when prompted.
 
-## Outputs
+- Finally, to run the adversarial scenario, use the `adversarial_test.py` script.
 
-Evaluation logs, metrics (collision counts, avoided vs. unavoided violations), and plots are saved under `results/` and `analysis/` respectively. 
+- Plots can be generated using the `analysis.py` script.
+
+## Results
+
+You can specify a directory for the results when you run the experiment scripts. The results generated for our paper are in the `results` directory. Generated plots will be written to the `analysis` directory by default.
 
 
 ## License
