@@ -27,9 +27,7 @@ PREFIX_LABELS = {
 SCENARIO_LABELS = {
     "in_2_normalized": "2L5V Scenario",
     "in_4_normalized": "4L20V  Scenario",
-    "in_tailgating_normalized": "Adversarial Scenario",
-    "in_speeding_normalized": "Speeding Scenario",
-    "in_switching_normalized": "Lane Switching Scenario",
+    "in_tailgating_normalized": "Adversarial Scenario"
 }
 
 def list_files(directory, extension=".txt"):
@@ -79,7 +77,7 @@ def analyze():
     rows = len(scenarios)
     cols = len(prefixes)
     fig_width = cols * 8
-    fig_height = rows * 8
+    fig_height = rows * 4
 
     fig, axes = plt.subplots(
         rows, cols,
@@ -113,40 +111,38 @@ def analyze():
                 label = f"{mode}" if i == 0 and j == 0 else None
                 ax.bar(positions, heights, width, label=label, color=colors[mode])
 
-            
-            ax.set_ylim(0, 11)  # Force y-axis to range from 0 to 20
+            ax.set_ylim(0, 11)
+            ax.tick_params(axis='y', labelsize=20)
             ax.set_xticks(list(x))
-            ax.set_xticklabels(all_metrics, rotation=45, ha='right')
+            ax.set_xticklabels([])
 
+    for ax, col in zip(axes[0], prefixes):
+        ax.set_title(PREFIX_LABELS[col], fontsize=24, pad=20)
+    
+    for ax, row in zip(axes[:, 0], scenarios):
+        ax.set_ylabel(SCENARIO_LABELS[row], rotation=0, fontsize=24, ha='right')
+        ax.yaxis.set_label_coords(-0.15, 0.5)  # Adjust y-label position
 
-            # Titles and labels
-            scenario_name = SCENARIO_LABELS.get(sc, sc)
-            model_name = PREFIX_LABELS[pf]
-            ax.set_title(f"{scenario_name}\n{model_name}", fontsize=16, weight='bold', loc='center')
+    axes[-1, 0].set_xticklabels(all_metrics, rotation=45, fontsize=24, ha='right')
+    axes[-1, 1].set_xticklabels(all_metrics, rotation=45, fontsize=24, ha='right')
 
-            if j == 0:
-                ax.set_ylabel("\nRates per 100 episodes \n (normalized by time steps)", fontsize=14)
-            else:
-                ax.tick_params(labelleft=False)  
-
+    fig.supylabel("Normalized Violation Rate", fontsize=28, fontweight='bold', ha='center', y=0.55)
 
     # Shared legend at the bottom
     handles, labels = axes[0][0].get_legend_handles_labels()
     fig.legend(
-        handles, labels,
-        title="Supervisor Status",
+        handles, [label.capitalize() for label in labels],
+        ncol=1,
+        fontsize=24,
         loc='upper center',
-        bbox_to_anchor=(0.5, -0.05),  # center it below the figure
-        ncol=2,
-        fontsize=14,
-        title_fontsize=14
+        bbox_to_anchor=(1.15, 0.6)
     )
 
-    fig.suptitle("Violation Rates per 100 Episodes Accross Model Types and Scenarios", fontsize=24, fontweight='bold', y=1.02)
+    fig.suptitle("Distribution of Norm Violations by Model and Scenario", fontsize=32, fontweight='bold', x=0.65, y=1)
 
     fig.tight_layout()
 
-    save_path = os.path.join(OUTPUT_DIR, "comparison_filtered_default.png")
+    save_path = os.path.join(OUTPUT_DIR, "comparison_filtered_default.eps")
     fig.savefig(save_path, dpi=150, bbox_inches='tight')
 
     print(f"Saved final comparison plot (no Speeding) to {save_path}")
