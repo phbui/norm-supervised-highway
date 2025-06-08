@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from stable_baselines3 import DQN
 from highway_env.envs.common.abstract import Observation
@@ -15,6 +16,7 @@ class Supervisor:
     ACTION_STRINGS     = norms.ACTION_STRINGS
     SPEED_THRESHOLD    = 30   # Speed limit (m/s)
     BRAKING_THRESHOLD  = 1.5  # Minimum TTC (s)
+    EPSILON            = 0.1
 
     def __init__(self, env_unwrapped: HighwayEnv, env_config: dict, verbose=False):
         """Initialize the supervisor with the environment and configuration.
@@ -75,6 +77,65 @@ class Supervisor:
 
         return violations, violations_dict
 
+    def get_action_probs(self, model: DQN, obs: Observation):
+        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        q_values = model.q_net(obs_tensor).detach().numpy().squeeze()
+        action_probs = F.softmax(torch.tensor(q_values), dim=0).numpy()
+
+        if self.verbose:
+            print("Action Probabilities:")
+            for i, prob in enumerate(action_probs):
+                print(f"  {self.ACTIONS_ALL[i]}: {prob:.3f}")
+
+        return action_probs
+    
+    def get_supervised_action(self, selected_action, action_probs, violations, violations_dict):
+        """
+        Given raw action_probs (softmax over Q), 
+        penalize norm-violating actions,
+        select via ε-greedy
+        """
+        if self.verbose:
+            print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
+
+        if violations > 0:
+            # Weighing likelihood of potential future actions by possibility of commiting more norm violations
+            n = len(self.ACTIONS_ALL)
+            violation_counts = np.zeros(n, dtype=int)
+            for a in range(n):
+                # Instead of count_action_nrom_violations, we could look at the weight of norms and their violations here
+                v, _ = self.count_action_norm_violations(a)
+                violation_counts[a] = v
+
+            # Fewer violations -> bigger weight
+            weights = 1.0 / (violation_counts + 1)
+            adj = action_probs * weights
+            adj_sum = adj.sum()
+            if adj_sum > 0:
+                adj /= adj_sum
+            else:
+                # fallback to uniform if something weird happens
+                adj = np.ones(n) / n
+
+            if self.verbose:
+                print("Adjusted action probs:")
+                for i, p in enumerate(adj):
+                    print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
+
+            if np.random.rand() < self.EPSILON:
+                selected_action = int(np.random.choice(n, p=adj))
+                mode = "sampled"
+            else:
+                selected_action = int(adj.argmax())
+                mode = "greedy"
+
+        violations, violations_dict = self.count_action_norm_violations(selected_action)
+        
+        if self.verbose:
+            print(f"Chose ({mode}): {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
+
+        return selected_action, violations, violations_dict
+
     def decide_action(self, model: DQN, obs: Observation) -> Action:
         """Decide which action the agent should take to comply with norms.
         
@@ -88,24 +149,9 @@ class Supervisor:
         selected_action, _          = model.predict(obs, deterministic=True)
         selected_action             = int(selected_action)
         violations, violations_dict = self.count_action_norm_violations(selected_action)
-        if self.verbose:
-            print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
-        if violations > 0:
-            available_actions = self.env_unwrapped.action_type.get_available_actions()
-            # If the agent's selected action violates any norms, manually select a compliant action
-            if self.ACTION_STRINGS["SLOWER"] in available_actions:
-                action_override                     = self.ACTION_STRINGS["SLOWER"]
-                new_violations, new_violations_dict = self.count_action_norm_violations(action_override)
-            else:
-                action_override                     = self.ACTION_STRINGS["IDLE"]
-                new_violations, new_violations_dict = self.count_action_norm_violations(action_override)
-            # Override the selected action if it reduces the number of violations
-            if new_violations < violations:
-                selected_action  = action_override
-                violations       = new_violations
-                violations_dict  = new_violations_dict
-        if self.verbose:
-            print(f"New action: {self.ACTIONS_ALL[selected_action]} | Norm Violations: {violations}")
+        action_probs = self.get_action_probs(model, obs)
+        selected_action, violations, violations_dict = self.get_supervised_action(selected_action, action_probs, violations, violations_dict)
+
         return selected_action, violations, violations_dict
         
     def _decide_action(self, model: DQN, obs: Observation) -> tuple[Action, int]:

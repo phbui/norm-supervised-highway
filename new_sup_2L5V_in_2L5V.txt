@@ -1,0 +1,37 @@
+######## Training run #1 ############
+Model: trained_30_duration_2_lanes_5_vehicles.zip:
+Environment config: train_30_duration_2_lanes_5_vehicles.json:
+Lanes: 2
+Vehicles: 5
+Duration: 30
+Experiments: 5
+Episodes: 100
+
+WITH SUPERVISOR
+Collisions: 11
+Average collisions: 2.20 (1.33)
+Total unavoided violations: 24.82712842712842
+Average unavoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 2.6356421356421365, 'Braking': 0.0, 'LaneChangeTailgating': 2.295411255411257, 'LaneChangeBraking': 0.034372294372294374}
+Average total unavoided violations: 4.97 (0.44) 
+
+Total avoided violations: 292.1358946608946
+Average avoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 46.88705627705629, 'Braking': 0.006666666666666666, 'LaneChangeTailgating': 11.481161616161609, 'LaneChangeBraking': 0.05229437229437228}
+Average total avoided violations: 58.43 (0.83) 
+
+Average TET: 0.0160 (0.0033) seconds
+Average safety score: -3.3124 (0.5920)
+
+WITHOUT SUPERVISOR
+Collisions: 80
+Average collisions: 16.00 (2.76)
+Total unavoided violations: 256.4232764566588
+Average unavoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 25.02165795653721, 'Braking': 0.09150793650793651, 'LaneChangeTailgating': 24.92496870650276, 'LaneChangeBraking': 1.2465206917838496}
+Average total unavoided violations: 51.28 (1.62) 
+
+Total avoided violations: 0.0
+Average avoided violatoins by type: {'Speeding': 0.0, 'Tailgating': 100.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
+Average total avoided violations: 0.00 (0.00) 
+
+Average TET: 0.1932 (0.0081) seconds
+Average safety score: -19.2687 (1.0901)
+
