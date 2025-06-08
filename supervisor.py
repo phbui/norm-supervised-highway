@@ -102,10 +102,12 @@ class Supervisor:
             # Weighing likelihood of potential future actions by possibility of commiting more norm violations
             n = len(self.ACTIONS_ALL)
             violation_counts = np.zeros(n, dtype=int)
+            violations_dicts = {a: 0 for a in range(n)}
             for a in range(n):
                 # Instead of count_action_nrom_violations, we could look at the weight of norms and their violations here
-                v, _ = self.count_action_norm_violations(a)
+                v, v_d = self.count_action_norm_violations(a)
                 violation_counts[a] = v
+                violations_dicts[a] = v_d
 
             # Fewer violations -> bigger weight
             weights = 1.0 / (violation_counts + 1)
@@ -129,7 +131,8 @@ class Supervisor:
                 selected_action = int(adj.argmax())
                 mode = "greedy"
 
-        violations, violations_dict = self.count_action_norm_violations(selected_action)
+            violations = violation_counts[selected_action]
+            violations_dict = violations_dicts[selected_action]
         
         if self.verbose:
             print(f"Chose ({mode}): {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
