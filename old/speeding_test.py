@@ -1,39 +1,8 @@
-import os
 import pygame
 from gymnasium.envs.registration import register
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.vehicle.kinematics import Vehicle
-from collections import defaultdict
 from experiment_run import main
-
-BASE_SEED = 239
-
-def list_files(directory, extension=".json"):
-    return sorted([f for f in os.listdir(directory) if f.endswith(extension)])
-
-def list_models(models_dir="models"):
-    return list_files(models_dir, ".zip")
-
-def get_output_filename(default="results.txt"):
-    fname = input(f"Enter output filename [{default}]: ").strip() + '.txt'
-    return fname if fname else default
-
-def count_by_presence(a_dict, b_dict):
-    for norm, delta in b_dict.items():
-        a_dict[norm] = a_dict.get(norm, 0) + delta
-    return a_dict
-
-def average_by_presence(dicts):
-    """Average value per key in dict list."""
-    sums   = defaultdict(float)
-    counts = defaultdict(int)
-
-    for d in dicts:
-        for k, v in d.items():
-            sums[k]   += v
-            counts[k] += 1
-
-    return {k: sums[k] / counts[k] for k in sums}
 
 class CustomHighwayEnv(HighwayEnv):
     """
@@ -161,4 +130,4 @@ register(
 pygame.init()
 
 if __name__ == "__main__":
-    main()
+    main('custom-highway-v0')

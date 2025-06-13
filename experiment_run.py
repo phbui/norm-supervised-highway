@@ -42,7 +42,7 @@ def average_by_presence(dicts):
 
     return {k: sums[k] / counts[k] for k in sums}
 
-def main():
+def main(env_name:str):
     # Select model
     model_files = list_models()
     if not model_files:
@@ -102,7 +102,7 @@ def main():
             num_avoided_violations = 0
             num_violations_weight_difference = 0
             print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
+            env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -310,4 +310,4 @@ def main():
     print(f"Results written to {output_file}")
 
 if __name__ == "__main__":
-    main()
+    main("highway-fast-v0")
