@@ -125,7 +125,7 @@ class Supervisor:
                 violation_weights[a]        = vw
                 violations_weights_dicts[a] = vw_d
 
-            # Bigger norm weight + violation -> lower action weight
+            # Bigger norm weight + violation -> lower action weight (lower chance of selection)
             action_weights = 1.0 / (violation_weights + 1)
             adj_prob = action_probs * action_weights
             adj_sum = adj_prob.sum()
