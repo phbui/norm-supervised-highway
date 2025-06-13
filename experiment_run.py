@@ -8,7 +8,6 @@ from stable_baselines3 import DQN
 
 from supervisor import Supervisor
 import metrics
-import norms
 
 BASE_SEED = 239
 
@@ -87,6 +86,10 @@ def main():
         all_avoided_violations = []
         all_violations_dict = []
         all_avoided_violations_dict = []
+        all_violations_weight = []
+        all_violations_weight_dict = []
+        all_violations_weight_difference = []
+        all_violations_weight_difference_dict = []
         all_tets = []
         all_safety_scores = []
 
@@ -95,12 +98,16 @@ def main():
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
             num_violations = 0
+            num_violations_weight = 0
             num_avoided_violations = 0
+            num_violations_weight_difference = 0
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
             supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
+            ep_violations_weight_dict = {str(norm): 0 for norm in supervisor.norms}
+            ep_violations_weight_difference_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_tets = []
             ep_safety_scores = []
 
@@ -113,31 +120,44 @@ def main():
                 tailgating_norm = supervisor.norms[0]
                 local_num_violations = 0
                 local_num_avoided = 0
+                local_violations_weight_difference = 0
                 local_violations_dict = {str(norm): 0 for norm in supervisor.norms}
                 local_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
+                local_violations_weight = 0
+                local_violations_weight_dict = {str(norm): 0 for norm in supervisor.norms}
+                local_violations_weight_difference_dict = {str(norm): 0 for norm in supervisor.norms}
                 local_ttc_history = []
                 local_safety_scores = []
                 tstep = 0
                 while not (done or truncated):
                     tstep += 1
                     action, _  = model.predict(obs, deterministic=True)
-                    violations, violations_dict = supervisor.count_action_norm_violations(action)
+                    violations, violations_dict, violations_weight, violations_weight_dict = supervisor.count_and_weigh_norm_violations(action)
 
                     if mode == "WITH SUPERVISOR":
                         # Select new action and compute number of avoided violations
-                        new_action, new_violations, new_violations_dict = supervisor.decide_action(model, obs)
+                        new_action, new_violations, new_violations_dict, new_violations_weight, new_violations_weight_dict  = supervisor.decide_action(model, obs)
                         avoided                 = violations - new_violations
                         avoided_violations_dict = {norm: violations_dict.get(norm, 0) - new_violations_dict.get(norm, 0) for norm in set(violations_dict) | set(new_violations_dict)}
+                        weight_difference       = violations_weight - new_violations_weight
+                        weight_difference_dict  = {norm: violations_weight_dict.get(norm, 0) - new_violations_weight_dict.get(norm, 0) for norm in set(violations_weight_dict) | set(new_violations_weight_dict)}
                         action                  = new_action
                         violations              = new_violations
                         violations_dict         = new_violations_dict
+                        violations_weight       = new_violations_weight
+                        violations_weight_dict  = new_violations_weight_dict
                     else:
                         avoided = 0
+                        weight_difference = 0
 
-                    local_num_violations         += violations
-                    local_num_avoided += avoided
+                    local_num_violations                += violations
+                    local_violations_weight             += violations_weight
+                    local_num_avoided                   += avoided
+                    local_violations_weight_difference  += weight_difference
                     count_by_presence(local_violations_dict, violations_dict)
                     count_by_presence(local_avoided_violations_dict, avoided_violations_dict)
+                    count_by_presence(local_violations_weight_dict, violations_weight_dict)
+                    count_by_presence(local_violations_weight_difference_dict, weight_difference_dict)
 
                     ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
                     local_ttc_history.append(ttcs[0])
@@ -154,17 +174,36 @@ def main():
                             num_collision += 1
                         
                         # Normalize the counts by the number of time steps
-                        num_violations += local_num_violations / tstep
-                        num_avoided_violations    += local_num_avoided / tstep
-                        local_violations_dict         = {norm: count / tstep for norm, count in local_violations_dict.items()}
-                        local_avoided_violations_dict = {norm: count / tstep for norm, count in local_avoided_violations_dict.items()}
+                        num_violations                          += local_num_violations / tstep
+                        num_violations_weight                   += local_violations_weight / tstep
+                        num_avoided_violations                  += local_num_avoided / tstep
+                        num_violations_weight_difference        += local_violations_weight_difference / tstep
+                        local_violations_dict                   = {norm: count / tstep for norm, count in local_violations_dict.items()}
+                        local_avoided_violations_dict           = {norm: count / tstep for norm, count in local_avoided_violations_dict.items()}
+                        local_violations_weight_dict            = {norm: count / tstep for norm, count in local_violations_weight_dict.items()}
+                        local_violations_weight_difference_dict = {norm: count / tstep for norm, count in local_violations_weight_difference_dict.items()}
 
-                ep_violations_dict         = count_by_presence(ep_violations_dict, local_violations_dict)
-                ep_avoided_violations_dict = count_by_presence(ep_avoided_violations_dict, local_avoided_violations_dict)
+                
+                ep_violations_dict                   = count_by_presence(ep_violations_dict, local_violations_dict)
+                ep_avoided_violations_dict           = count_by_presence(ep_avoided_violations_dict, local_avoided_violations_dict)
+                ep_violations_weight_dict            = count_by_presence(ep_violations_weight_dict, local_violations_weight_dict)
+                ep_violations_weight_difference_dict = count_by_presence(ep_violations_weight_difference_dict, local_violations_weight_difference_dict)
                 ep_tets.append(metrics.calculate_tet(local_ttc_history, env_config["simulation_frequency"]))
                 ep_safety_scores.append(np.nanmean(local_safety_scores))
 
-                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Unavoided Violatons: {str(ep_violations_dict)}, Number of Violations: {num_violations}, Avoided Violations: {str(ep_avoided_violations_dict)}, Number of Avoided Violations: {num_avoided_violations}, TET: {ep_tets[-1]:.2f} seconds, Safety Score: {ep_safety_scores[-1]:.2f}")
+                print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). " +
+                      f"Episode {episode + 1}/{num_episodes}, " +
+                      f"Collision: {num_collision}, " +
+                      f"Unavoided Violatons: {str(ep_violations_dict)}, " +
+                      f"Number of Violations: {num_violations}, " +
+                      f"Avoided Violations: {str(ep_avoided_violations_dict)}, " +
+                      f"Number of Avoided Violations: {num_avoided_violations}, " +
+                      f"Violations Weight: {num_violations_weight}, " +
+                      f"Violations Weight Difference: {num_violations_weight_difference}, " +
+                      f"Violations Weight across Norms: {str(ep_violations_weight_dict)}, " +
+                      f"Violations Weight Differences across Norms: {str(ep_violations_weight_difference_dict)}, " +
+                      f"TET: {ep_tets[-1]:.2f} seconds, " +
+                      f"Safety Score: {ep_safety_scores[-1]:.2f}")
 
                 # env.render()  # Uncomment if you want to render the environment
 
@@ -173,13 +212,50 @@ def main():
             all_avoided_violations.append(num_avoided_violations)
             all_violations_dict.append(ep_violations_dict)
             all_avoided_violations_dict.append(ep_avoided_violations_dict)
+            all_violations_weight.append(num_violations_weight)
+            all_violations_weight_dict.append(ep_violations_weight_dict)
+            all_violations_weight_difference.append(num_violations_weight_difference)
+            all_violations_weight_difference_dict.append(ep_violations_weight_difference_dict)
             all_tets.append(np.nanmean(ep_tets))
             all_safety_scores.append(np.nanmean(ep_safety_scores))
-            print(f"Experiment {experiment + 1}/{num_experiments} finished. Collision count: {num_collision}, Unavoided Violatons: {str(all_violations_dict)}, Total Unavoided: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}, Average TET: {np.mean(ep_tets):.4f} seconds, Average Safety Score: {np.nanmean(ep_safety_scores):.4f}")
+            print(f"Experiment {experiment + 1}/{num_experiments} finished. " +
+                  f"Collision count: {num_collision}, " +
+                  f"Unavoided Violatons: {str(all_violations_dict)}, " +
+                  f"Total Unavoided: {num_violations}, " +
+                  f"Avoided Violations:{str(all_avoided_violations_dict)}, " +
+                  f"Total Avoided Violations: {num_avoided_violations}, " +
+                  f"Total Violations Weight: {num_violations_weight}, " +
+                  f"Violations Weight Difference: {num_violations_weight_difference}, " +
+                  f"Violations Weight across Norms: {str(all_violations_weight_dict)}, " +
+                  f"Violations Weight Differences across Norms: {str(all_violations_weight_difference_dict)}, " +
+                  f"Average TET: {np.mean(ep_tets):.4f} seconds, " +
+                  f"Average Safety Score: {np.nanmean(ep_safety_scores):.4f}")
 
         env.close()
-        results[mode] = [all_collisions, all_violations, all_avoided_violations, all_violations_dict, all_avoided_violations_dict, all_tets, all_safety_scores]
-        print(f"Results for {mode}: Collisions: {all_collisions}, Unavoided Violatons: {str(all_violations_dict)}, Total Unavoided: {num_violations}, Avoided Violations: {str(all_avoided_violations_dict)}, Total Avoided Violations: {num_avoided_violations}, Average TET: {np.mean(all_tets):.4f} seconds, Average Safety Score: {np.mean(all_safety_scores):.4f}")
+        results[mode] = [
+            all_collisions, 
+            all_violations, 
+            all_avoided_violations, 
+            all_violations_dict, 
+            all_avoided_violations_dict, 
+            all_violations_weight,
+            all_violations_weight_dict,
+            all_violations_weight_difference,
+            all_violations_weight_difference_dict,
+            all_tets, 
+            all_safety_scores]
+        
+        print(f"Results for {mode}: Collisions: {all_collisions}, " +
+              f"Unavoided Violatons: {str(all_violations_dict)}, " +
+              f"Total Unavoided: {num_violations}, " +
+              f"Avoided Violations: {str(all_avoided_violations_dict)}, " +
+              f"Total Avoided Violations: {num_avoided_violations}, " +
+              f"Total Violations Weight: {num_violations_weight}, " +
+              f"Violations Weight Difference: {num_violations_weight_difference}, " +
+              f"Violations Weight across Actions: {str(all_violations_weight_dict)}, " +
+              f"Violations Weight Differences across Actions: {str(all_violations_weight_difference_dict)}, " +
+              f"Average TET: {np.mean(all_tets):.4f} seconds, " +
+              f"Average Safety Score: {np.mean(all_safety_scores):.4f}")
 
     if not os.path.exists(output_file):
         open(output_file, 'w').close()
@@ -202,20 +278,36 @@ def main():
         f.write(f"Experiments: {num_experiments}\n")
         f.write(f"Episodes: {num_episodes}\n\n")
 
-        for mode, [collisions, violations, avoided_violations, violations_dict, avoided_violations_dict, tet, safety_score] in results.items():
+        for mode, [collisions, 
+                   violations, 
+                   avoided_violations, 
+                   violations_dict, 
+                   avoided_violations_dict, 
+                   violations_weight,
+                   violations_weight_dict,
+                   violations_weight_difference,
+                   violations_weight_difference_dict,
+                   tet, 
+                   safety_score] in results.items():
             f.write(f"{mode}\n")
-            
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
             f.write(f"Total unavoided violations: {sum(violations)}\n")
-            f.write(f"Average unavoided violatoins by type: {average_by_presence(violations_dict)}\n")
+            f.write(f"Average unavoided violations by type: {average_by_presence(violations_dict)}\n")
             f.write(f"Average total unavoided violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
             f.write(f"Total avoided violations: {sum(avoided_violations)}\n")
-            f.write(f"Average avoided violatoins by type: {average_by_presence(avoided_violations_dict)}\n")
+            f.write(f"Average avoided violations by type: {average_by_presence(avoided_violations_dict)}\n")
             f.write(f"Average total avoided violations: {np.mean(avoided_violations):.2f} ({np.std(avoided_violations):.2f}) \n\n")
+            f.write(f"Total violations weight: {sum(violations_weight)}\n")
+            f.write(f"Average total violations weight: {np.mean(violations_weight):.2f} ({np.std(violations_weight):.2f}) \n")
+            f.write(f"Average total violations weight by type: {average_by_presence(violations_weight_dict)}\n\n")
+            f.write(f"Total violations weight difference: {sum(violations_weight_difference)}\n")
+            f.write(f"Average total violations weight difference: {np.mean(violations_weight_difference):.2f} ({np.std(violations_weight_difference):.2f}) \n")
+            f.write(f"Average total violations weight difference by type: {average_by_presence(violations_weight_difference_dict)}\n\n")        
             f.write(f"Average TET: {np.mean(tet):.4f} ({np.std(tet):.4f}) seconds\n")
             f.write(f"Average safety score: {np.nanmean(safety_score):.4f} ({np.nanstd(safety_score):.4f})\n\n")
 
-    print(f"Results written to {output_file}.txt")
+    print(f"Results written to {output_file}")
+
 if __name__ == "__main__":
     main()

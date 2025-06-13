@@ -61,31 +61,21 @@ class Supervisor:
                 road=self.env_unwrapped.road
             )
         ]
-
-    def count_state_norm_violations(self) -> int:
-        """Return the number of norm violations for the given state."""
-        violations = 0
-        violations_dict = {norm: 0 for norm in self.norms}
-        for norm in self.norms:
-            # Skip lane change norms, since they only apply to action violations
-            if isinstance(norm, norms.LaneChangeNormProtocol):
-                continue
-            elif norm.is_violating_state(self.env_unwrapped.vehicle):
-                violations += 1
-                violations_dict[norm] += 1
-
-        return violations, violations_dict
     
-    def count_action_norm_violations(self, action: Action) -> int:
+    def count_and_weigh_norm_violations(self, action: Action) -> int:
         """Return the number of norm violations for a given action."""
         violations = 0
+        violations_weight = 0
         violations_dict = {str(norm): 0 for norm in self.norms}
+        violations_weight_dict = {str(norm): 0 for norm in self.norms}
         for norm in self.norms:
             if norm.is_violating_action(action, self.env_unwrapped.vehicle):
                 violations += 1
                 violations_dict[str(norm)] += 1
+                violations_weight += norm.weight
+                violations_weight_dict[str(norm)] += norm.weight
 
-        return violations, violations_dict
+        return violations, violations_dict, violations_weight, violations_weight_dict
 
     def get_action_probs(self, model: DQN, obs: np.ndarray) -> np.ndarray:
         device = getattr(model, "device",
@@ -106,7 +96,7 @@ class Supervisor:
 
         return action_probs
     
-    def get_supervised_action(self, selected_action, action_probs, violations, violations_dict):
+    def get_supervised_action(self, selected_action, action_probs, violations, violations_dict, violations_weight, violations_weight_dict):
         """
         Given raw action_probs (softmax over Q), 
         penalize norm-violating actions,
@@ -115,41 +105,52 @@ class Supervisor:
         if self.verbose:
             print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
 
+        selected_violations             = violations
+        selected_violations_dict        = violations_dict
+        selected_violations_weight      = violations_weight
+        selected_violations_weight_dict = violations_weight_dict
+
         if violations > 0:
             # Weighing likelihood of potential future actions by possibility of commiting more norm violations
             n = len(self.ACTIONS_ALL)
             violation_counts = np.zeros(n, dtype=int)
             violations_dicts = {a: 0 for a in range(n)}
+            violation_weights = np.zeros(n, dtype=int)
+            violations_weights_dicts = {a: 0 for a in range(n)}
             for a in range(n):
                 # Instead of count_action_nrom_violations, we could look at the weight of norms and their violations here
-                v, v_d = self.count_action_norm_violations(a)
-                violation_counts[a] = v
-                violations_dicts[a] = v_d
+                v, v_d, vw, vw_d = self.count_and_weigh_norm_violations(a)
+                violation_counts[a]        = v
+                violations_dicts[a]        = v_d
+                violation_weights[a]        = vw
+                violations_weights_dicts[a] = vw_d
 
-            # Fewer violations -> bigger weight
-            weights = 1.0 / (violation_counts + 1)
-            adj = action_probs * weights
-            adj_sum = adj.sum()
+            # Bigger norm weight + violation -> lower action weight
+            action_weights = 1.0 / (violation_weights + 1)
+            adj_prob = action_probs * action_weights
+            adj_sum = adj_prob.sum()
             if adj_sum > 0:
-                adj /= adj_sum
+                adj_prob /= adj_sum
             else:
                 # fallback to uniform if something weird happens
-                adj = np.ones(n) / n
+                adj_prob = np.ones(n) / n
 
             if self.verbose:
                 print("Adjusted action probs:")
-                for i, p in enumerate(adj):
+                for i, p in enumerate(adj_prob):
                     print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
 
-            selected_action = int(adj.argmax())
+            selected_action = int(adj_prob.argmax())
 
-            violations = violation_counts[selected_action]
-            violations_dict = violations_dicts[selected_action]
+            selected_violations = violation_counts[selected_action]
+            selected_violations_dict = violations_dicts[selected_action]
+            selected_violations_weight = violation_weights[selected_action]
+            selected_violations_weight_dict = violations_weights_dicts[selected_action]
         
         if self.verbose:
-            print(f"Chose: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
+            print(f"Chose: {self.ACTIONS_ALL[selected_action]} | Norm violations: {selected_violations} | Norm violation weight: {selected_violations_weight}")
 
-        return selected_action, violations, violations_dict
+        return selected_action, selected_violations, selected_violations_dict, selected_violations_weight, selected_violations_weight_dict
 
     def decide_action(self, model: DQN, obs: Observation) -> Action:
         """Decide which action the agent should take to comply with norms.
@@ -163,57 +164,12 @@ class Supervisor:
         """ 
         selected_action, _          = model.predict(obs, deterministic=True)
         selected_action             = int(selected_action)
-        violations, violations_dict = self.count_action_norm_violations(selected_action)
+        violations, violations_dict, violations_weight, violations_weight_dict = self.count_and_weigh_norm_violations(selected_action)
         action_probs = self.get_action_probs(model, obs)
-        selected_action, violations, violations_dict = self.get_supervised_action(selected_action, action_probs, violations, violations_dict)
+        selected_action, violations, violations_dict, violations_weight, violations_weight_dict = self.get_supervised_action(selected_action, action_probs, violations, violations_dict, violations_weight, violations_weight_dict)
 
-        return selected_action, violations, violations_dict
+        return selected_action, violations, violations_dict, violations_weight, violations_weight_dict
         
-    def _decide_action(self, model: DQN, obs: Observation) -> tuple[Action, int]:
-        """Decide which action the agent should take to comply with norms.
-        
-        Selects the action with the highest q-value from the network which also minimizes the number
-        of norm violations. This method is not currently in use because it significantly increases
-        the number of collisions.
-
-        :param model: DQN model
-        :param obs: observation from the environment
-
-        :return: norm-compliant action selection
-        """
-        obs_tensor: torch.Tensor = model.policy.obs_to_tensor(obs)[0]
-        q_values: torch.Tensor   = model.policy.q_net(obs_tensor)
-        if self.verbose:
-            print(f"Original action selection: {self.ACTIONS_ALL[q_values.argmax()]}")
-        
-        # Sort actions in descending order, so the first action is the most promising
-        _, sorted_idx_tensor = torch.sort(q_values, descending=True)
-        sorted_actions       = sorted_idx_tensor.tolist()[0]
-        violations           = dict(zip(sorted_actions, [0] * len(sorted_actions)))
-        
-        available_actions = self.env_unwrapped.action_type.get_available_actions()
-        selected_action   = None
-        for action in sorted_actions:
-            # Skip invalid actions and remove from dict
-            if action not in available_actions:
-                del violations[action]
-                continue
-
-            violations[action] = self.count_action_norm_violations(action)
-
-            if violations[action] == 0:
-                selected_action = action
-                break
-        
-        # If there are no norm-compliant actions, select the best action which minimizes violations
-        if selected_action is None:
-            selected_action = min(violations, key=violations.get)
-
-        if self.verbose:
-            print(f"New action selection: {self.ACTIONS_ALL[selected_action]}")
-
-        return selected_action, violations[selected_action]
-    
     @staticmethod
     def print_obs(obs: Observation):
         """Print kinematic observation data for the ego vehicle and all other present vehicles."""
