@@ -32,7 +32,7 @@ stable_baselines3==2.6.0
 sympy==1.13.1
 tensorboard==2.19.0
 tensorboard-data-server==0.7.2
-torch==2.6.0
+torch==2.7.1
 typing_extensions==4.13.1
 tzdata==2025.2
 Werkzeug==3.1.3

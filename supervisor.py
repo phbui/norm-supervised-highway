@@ -16,7 +16,6 @@ class Supervisor:
     ACTION_STRINGS     = norms.ACTION_STRINGS
     SPEED_THRESHOLD    = 30   # Speed limit (m/s)
     BRAKING_THRESHOLD  = 1.5  # Minimum TTC (s)
-    EPSILON            = 0.1
 
     def __init__(self, env_unwrapped: HighwayEnv, env_config: dict, verbose=False):
         """Initialize the supervisor with the environment and configuration.
@@ -37,19 +36,30 @@ class Supervisor:
         with the new state of the environment.
         """
         self.norms: list[norms.MetricsDrivenNorm] = [
-            norms.SpeedingNorm(self.SPEED_THRESHOLD),
+            norms.SpeedingNorm(
+                weight=5, 
+                speed_limit=self.SPEED_THRESHOLD
+            ),
             norms.TailgatingNorm(
-                self.env_unwrapped.road,
-                self.env_unwrapped.action_type,
-                self.env_config["simulation_frequency"]
+                weight=5,
+                road=self.env_unwrapped.road,
+                action_type=self.env_unwrapped.action_type,
+                simulation_frequency=self.env_config["simulation_frequency"]
             ),
-            norms.BrakingNorm(self.env_unwrapped.road),
+            norms.BrakingNorm(
+                weight=5,
+                road=self.env_unwrapped.road
+            ),
             norms.LaneChangeTailgatingNorm(
-                self.env_unwrapped.road,
-                self.env_unwrapped.action_type,    
-                self.env_config["simulation_frequency"]
+                weight=5,
+                road=self.env_unwrapped.road,
+                action_type=self.env_unwrapped.action_type,    
+                simulation_frequency=self.env_config["simulation_frequency"]
             ),
-            norms.LaneChangeBrakingNorm(self.env_unwrapped.road)
+            norms.LaneChangeBrakingNorm(
+                weight=5,
+                road=self.env_unwrapped.road
+            )
         ]
 
     def count_state_norm_violations(self) -> int:
@@ -77,10 +87,17 @@ class Supervisor:
 
         return violations, violations_dict
 
-    def get_action_probs(self, model: DQN, obs: Observation):
-        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
-        q_values = model.q_net(obs_tensor).detach().numpy().squeeze()
-        action_probs = F.softmax(torch.tensor(q_values), dim=0).numpy()
+    def get_action_probs(self, model: DQN, obs: np.ndarray) -> np.ndarray:
+        device = getattr(model, "device",
+                         torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+
+        obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+
+        with torch.no_grad():
+            q_tensor     = model.q_net(obs_tensor)            # shape (1, n_actions)
+            probs_tensor = F.softmax(q_tensor, dim=-1)        # still on device
+
+        action_probs = probs_tensor.squeeze(0).cpu().numpy()  # shape (n_actions,)
 
         if self.verbose:
             print("Action Probabilities:")
@@ -124,18 +141,13 @@ class Supervisor:
                 for i, p in enumerate(adj):
                     print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
 
-            if np.random.rand() < self.EPSILON:
-                selected_action = int(np.random.choice(n, p=adj))
-                mode = "sampled"
-            else:
-                selected_action = int(adj.argmax())
-                mode = "greedy"
+            selected_action = int(adj.argmax())
 
             violations = violation_counts[selected_action]
             violations_dict = violations_dicts[selected_action]
         
         if self.verbose:
-            print(f"Chose ({mode}): {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
+            print(f"Chose: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
 
         return selected_action, violations, violations_dict
 

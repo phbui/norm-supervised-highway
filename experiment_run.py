@@ -110,11 +110,7 @@ def main():
                 obs, _ = env.reset(seed=episode_seed) # <- seeded
                 supervisor.reset_norms()
                 # Used for safety score calculations
-                tailgating_norm = norms.TailgatingNorm(
-                    env.unwrapped.road,
-                    env.unwrapped.action_type,
-                    env_config["simulation_frequency"]
-                )
+                tailgating_norm = supervisor.norms[0]
                 local_num_violations = 0
                 local_num_avoided = 0
                 local_violations_dict = {str(norm): 0 for norm in supervisor.norms}
