@@ -124,7 +124,8 @@ class TailgatingNorm(MetricsDrivenNorm):
         """
         super().__init__(violating_actions=[
             ACTION_STRINGS["IDLE"],
-            ACTION_STRINGS["FASTER"]
+            ACTION_STRINGS["FASTER"],
+            ACTION_STRINGS["SLOWER"], # experimental: slower action can still be tailgating vs lane change
         ])
         self.road                 = road
         self.action_type          = action_type
@@ -202,6 +203,35 @@ class BrakingNorm(MetricsDrivenNorm):
         """To string function."""
         return "Braking"
 
+class CollisionNorm(MetricsDrivenNorm):
+    """Norm constraint for avoiding collisions."""
+    def __init__(self, road: Road, min_ttc: float = 0.5):
+        """Initialize the collision constraint with a threshold.
+
+        :param road: the road object to check for collision violations
+        :param min_ttc: the minimum allowed TTC value
+        """
+        super().__init__([
+            ACTION_STRINGS["IDLE"],
+            ACTION_STRINGS["FASTER"],
+            ACTION_STRINGS["SLOWER"]
+        ])
+        self.road    = road
+        self.min_ttc = min_ttc
+
+    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
+        """Return the TTC between the ego vehicle and the vehicle ahead."""
+        ttc_front, _ = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index) # For now just use TTC 
+        return ttc_front
+    
+    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
+        """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
+        return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
+    
+    def __str__(self):
+        """To string function."""
+        return "Collision"
+
 class LaneChangeNormProtocol(Protocol):
     """Protocol for lane change norm constraints."""
     road: Road
@@ -250,8 +280,18 @@ class LaneChangeNormMixin:
         # Check for safe distance violations to the vehicle ahead and the vehicle behind
         _, v_rear = self.road.neighbour_vehicles(vehicle, target_lane_index)
         if v_rear is not None:
-            return (super().is_violating_action(action, vehicle, target_lane_index)
-                    or super().is_violating_action(action, v_rear, target_lane_index))
+            is_front_violation  = super().is_violating_action(action, vehicle, target_lane_index)
+
+            ####### for debugging #######
+            if is_front_violation and action in [
+                # ACTION_STRINGS["LANE_LEFT"],
+                ACTION_STRINGS["LANE_RIGHT"]
+            ]:
+                # for debug
+                print("Front violation detected for lane change action:", action)
+            ####### for debugging #######
+
+            return is_front_violation or super().is_violating_action(action, v_rear, target_lane_index)
         # If there is no vehicle behind, only check for violation to the vehicle ahead
         return super().is_violating_action(action, vehicle, target_lane_index)
     
@@ -294,3 +334,21 @@ class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
     def __str__(self):
         """To string function."""
         return "LaneChangeBraking"
+
+class LaneChangeCollisionNorm(LaneChangeNormMixin, CollisionNorm):
+    """Norm constraint for avoiding collisions due to lane changes."""
+    def __init__(self, road: Road, min_ttc: float = 0.5):
+        """Initialize the collision constraint with a threshold.
+
+        :param road: the road object to check for collision violations
+        :param min_ttc: the minimum allowed TTC value
+        """
+        super().__init__(road, min_ttc)
+        self.violating_actions = [
+            ACTION_STRINGS["LANE_LEFT"],
+            ACTION_STRINGS["LANE_RIGHT"]
+        ]
+
+    def __str__(self):
+        """To string function."""
+        return "LaneChangeCollision"

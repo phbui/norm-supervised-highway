@@ -97,8 +97,8 @@ def main():
             num_violations = 0
             num_avoided_violations = 0
             print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="rgb_array", config=env_config)
-            supervisor = Supervisor(env.unwrapped, env_config, verbose=False) 
+            env = gymnasium.make("highway-fast-v0", render_mode="human", config=env_config)
+            supervisor = Supervisor(env.unwrapped, env_config, verbose=True if mode == "WITH SUPERVISOR" else False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_tets = []
@@ -170,7 +170,7 @@ def main():
 
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). Episode {episode + 1}/{num_episodes}, Collision: {num_collision}, Unavoided Violatons: {str(ep_violations_dict)}, Number of Violations: {num_violations}, Avoided Violations: {str(ep_avoided_violations_dict)}, Number of Avoided Violations: {num_avoided_violations}, TET: {ep_tets[-1]:.2f} seconds, Safety Score: {ep_safety_scores[-1]:.2f}")
 
-                # env.render()  # Uncomment if you want to render the environment
+                env.render()  # Uncomment if you want to render the environment
 
             all_collisions.append(num_collision)
             all_violations.append(num_violations)

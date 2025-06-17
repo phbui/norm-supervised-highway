@@ -16,7 +16,8 @@ class Supervisor:
     ACTION_STRINGS     = norms.ACTION_STRINGS
     SPEED_THRESHOLD    = 30   # Speed limit (m/s)
     BRAKING_THRESHOLD  = 1.5  # Minimum TTC (s)
-    EPSILON            = 0.1
+    COLLISION_THRESHOLD = 0.5  # Minimum TTC (s)
+    EPSILON            = 0.0
 
     def __init__(self, env_unwrapped: HighwayEnv, env_config: dict, verbose=False):
         """Initialize the supervisor with the environment and configuration.
@@ -43,13 +44,21 @@ class Supervisor:
                 self.env_unwrapped.action_type,
                 self.env_config["simulation_frequency"]
             ),
-            norms.BrakingNorm(self.env_unwrapped.road),
+            norms.BrakingNorm(
+                self.env_unwrapped.road,
+                self.BRAKING_THRESHOLD
+                ),
+            norms.CollisionNorm(
+                self.env_unwrapped.road,
+                self.COLLISION_THRESHOLD
+            ),
             norms.LaneChangeTailgatingNorm(
                 self.env_unwrapped.road,
                 self.env_unwrapped.action_type,    
                 self.env_config["simulation_frequency"]
             ),
-            norms.LaneChangeBrakingNorm(self.env_unwrapped.road)
+            norms.LaneChangeBrakingNorm(self.env_unwrapped.road),
+            norms.LaneChangeCollisionNorm(self.env_unwrapped.road)
         ]
 
     def count_state_norm_violations(self) -> int:
@@ -75,6 +84,13 @@ class Supervisor:
                 violations += 1
                 violations_dict[str(norm)] += 1
 
+                # for debug 
+                # print if collision norm is violated
+                if str(norm) == "Collision":
+                    print("Collision norm violated for action:", self.ACTIONS_ALL[action])
+                elif str(norm) == "LaneChangeCollision":
+                    print("LaneChangeCollision norm violated for action:", self.ACTIONS_ALL[action])
+
         return violations, violations_dict
 
     def get_action_probs(self, model: DQN, obs: Observation):
@@ -95,6 +111,7 @@ class Supervisor:
         penalize norm-violating actions,
         select via ε-greedy
         """
+        mode = "greedy"
         if self.verbose:
             print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
 
@@ -104,13 +121,13 @@ class Supervisor:
             violation_counts = np.zeros(n, dtype=int)
             violations_dicts = {a: 0 for a in range(n)}
             for a in range(n):
-                # Instead of count_action_nrom_violations, we could look at the weight of norms and their violations here
+                # Instead of count_action_norm_violations, we could look at the weight of norms and their violations here
                 v, v_d = self.count_action_norm_violations(a)
                 violation_counts[a] = v
                 violations_dicts[a] = v_d
 
             # Fewer violations -> bigger weight
-            weights = 1.0 / (violation_counts + 1)
+            weights = 1.0 / (violation_counts**10 + 1)
             adj = action_probs * weights
             adj_sum = adj.sum()
             if adj_sum > 0:
@@ -120,7 +137,11 @@ class Supervisor:
                 adj = np.ones(n) / n
 
             if self.verbose:
-                print("Adjusted action probs:")
+                print("original action probs:")
+                for i, p in enumerate(action_probs):
+                    print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
+                
+                print("Adjusted action probs (after penalizing violations):")
                 for i, p in enumerate(adj):
                     print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
 
@@ -136,6 +157,8 @@ class Supervisor:
         
         if self.verbose:
             print(f"Chose ({mode}): {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
+            if self.ACTIONS_ALL[selected_action] == "LANE_RIGHT":
+                print("LANE_RIGHT")
 
         return selected_action, violations, violations_dict
 
