@@ -53,6 +53,10 @@ class Supervisor:
                 road=self.env_unwrapped.road,
                 min_ttc=self.COLLISION_THRESHOLD
             ),
+            norms.BrakingNorm(
+                weight=50,
+                road=self.env_unwrapped.road,
+            ),
             norms.LaneChangeTailgatingNorm(
                 weight=50,
                 road=self.env_unwrapped.road,
@@ -68,6 +72,7 @@ class Supervisor:
                 weight=50,
                 road=self.env_unwrapped.road
             )
+
         ]
     
     def count_and_weigh_norm_violations(self, action: Action) -> int:
@@ -108,9 +113,8 @@ class Supervisor:
         """
         Given raw action_probs (softmax over Q), 
         penalize norm-violating actions,
-        select via ε-greedy
+        select action with highest probability
         """
-        mode = "greedy"
         if self.verbose:
             print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
 
