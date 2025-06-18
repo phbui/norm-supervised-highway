@@ -42,7 +42,7 @@ def average_by_presence(dicts):
 
     return {k: sums[k] / counts[k] for k in sums}
 
-def main(env_name:str):
+def main(env_name = "highway-fast-v0"):
     # Select model
     model_files = list_models()
     if not model_files:
@@ -102,8 +102,8 @@ def main(env_name:str):
             num_avoided_violations = 0
             num_violations_weight_difference = 0
             print(f"Creating environment with config from {env_config_path}...")
-            env = gymnasium.make("highway-fast-v0", render_mode="human", config=env_config)
-            supervisor = Supervisor(env.unwrapped, env_config, verbose=True if mode == "WITH SUPERVISOR" else False) 
+            env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
+            supervisor = Supervisor(env.unwrapped, env_config, verbose=False if mode == "WITH SUPERVISOR" else False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_violations_weight_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -171,6 +171,7 @@ def main(env_name:str):
 
                     if done or truncated:
                         if info["crashed"]:
+
                             num_collision += 1
                         
                         # Normalize the counts by the number of time steps
@@ -205,7 +206,7 @@ def main(env_name:str):
                       f"TET: {ep_tets[-1]:.2f} seconds, " +
                       f"Safety Score: {ep_safety_scores[-1]:.2f}")
 
-                env.render()  # Uncomment if you want to render the environment
+                # env.render()  # Uncomment if you want to render the environment
 
             all_collisions.append(num_collision)
             all_violations.append(num_violations)
@@ -311,3 +312,5 @@ def main(env_name:str):
 
 if __name__ == "__main__":
     main("highway-fast-v0")
+    # main("merge-v0")
+

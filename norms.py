@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from highway_env.envs.common.action import Action, DiscreteMetaAction
 from highway_env.road.road import Road, LaneIndex
 from highway_env.vehicle.controller import MDPVehicle
-
+from highway_env.vehicle.dynamics import Vehicle
 import metrics
 
 ACTION_STRINGS = {val: key for key, val in DiscreteMetaAction.ACTIONS_ALL.items()}
@@ -61,13 +61,34 @@ class MetricsDrivenNorm(ABC):
         return self.is_violating_state(vehicle, *args, **kwargs)
 
     @staticmethod
-    def get_next_speed(vehicle: MDPVehicle) -> float:
-        """Return the next speed of the vehicle if the agent chooses to go faster."""
+    def get_next_speed(vehicle: MDPVehicle, action: Action = None) -> float:
+        """Return the next speed of the vehicle based on the action.
+        
+        :param vehicle: the vehicle to get the next speed for
+        :param action: the action to predict speed for. If None, defaults to IDLE
+        """
         # NOTE: The following speed control logic is copied from the HighwayEnv code.
         # Refer to: `highway_env.vehicle.controller.MDPVehicle.act()`
-        target_speed_index = vehicle.speed_to_index(vehicle.speed) + 1
+        
+        # Default to IDLE if no action provided
+        if action is None:
+            action = ACTION_STRINGS["IDLE"]
+        
+        # Determine speed index change based on action
+        if action == ACTION_STRINGS["FASTER"]:
+            speed_index_change = 1
+        elif action == ACTION_STRINGS["SLOWER"]:
+            speed_index_change = -1
+        elif action == ACTION_STRINGS["LANE_LEFT"] or action == ACTION_STRINGS["LANE_RIGHT"]:
+            # Lane changes typically involve slight speed adjustments
+            # For now, assume they maintain current speed, but could be adjusted
+            speed_index_change = 1
+        else:  # IDLE or other actions
+            speed_index_change = 0
+        
+        target_speed_index = vehicle.speed_to_index(vehicle.speed) + speed_index_change
         target_speed_index = int(
-            np.clip(vehicle.speed_index, 0, vehicle.target_speeds.size - 1)
+            np.clip(target_speed_index, 0, vehicle.target_speeds.size - 1)
         )
         target_speed = vehicle.index_to_speed(target_speed_index)
         return target_speed
@@ -86,9 +107,7 @@ class SpeedingNorm(MetricsDrivenNorm):
         super().__init__(
         weight,
         [
-            ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["IDLE"],
-            ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["FASTER"]
         ])
         self.speed_limit = speed_limit
@@ -105,12 +124,10 @@ class SpeedingNorm(MetricsDrivenNorm):
         """Check if the action produces or worsens a speed limit violation."""
         if action not in self.violating_actions:
             return False
-        # Check if the action causes the vehicle to exceed the speed limit
-        if action == ACTION_STRINGS["FASTER"]:
-            target_speed = super().get_next_speed(vehicle)
-            return target_speed > self.speed_limit
-        # Check if the vehicle is already speeding and the action is not to slow down
-        return self.is_violating_state(vehicle)
+        
+        # Get the predicted speed for this action
+        target_speed = super().get_next_speed(vehicle, action)
+        return target_speed > self.speed_limit
     
     def __str__(self):
         """To string function."""
@@ -169,12 +186,10 @@ class TailgatingNorm(MetricsDrivenNorm):
         """Check if the action produces or worsens a tailgating violation."""
         if action not in self.violating_actions:
             return False
-        # Check if the action causes the vehicle to violate the safe following distance
-        if action == ACTION_STRINGS["FASTER"]:
-            target_speed = super().get_next_speed(vehicle)
-            return self.is_violating_state(vehicle, lane_index, target_speed)
-        # Check if the vehicle is already tailgating and not slowing down or changing lanes
-        return self.is_violating_state(vehicle, lane_index)
+        
+        # Get the predicted speed for this action
+        target_speed = super().get_next_speed(vehicle, action)
+        return self.is_violating_state(vehicle, lane_index, target_speed)
         
     def __str__(self):
         """To string function."""
@@ -191,50 +206,84 @@ class BrakingNorm(MetricsDrivenNorm):
         super().__init__(
         weight,
         [
-            ACTION_STRINGS["IDLE"],
-            ACTION_STRINGS["FASTER"]
+            ACTION_STRINGS["SLOWER"]
         ])
         self.road    = road
         self.min_ttc = min_ttc
 
-    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
-        """Return the TTC between the ego vehicle and the vehicle ahead."""
-        ttc_front, _ = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index)
-        return ttc_front
+    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> float:
+        """Return the TTC between the ego vehicle and the rear following vehicle."""
+        _, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed ) 
+        return ttc_rear
     
-    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
+    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
-        return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
+        return self.evaluate_criteria(vehicle, lane_index, next_speed) < self.min_ttc
     
+    def is_violating_action(self, action: Action, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
+        """Check if the action produces or worsens a braking violation."""
+        if action not in self.violating_actions:
+            return False
+        
+        # Get the predicted speed for this action
+        target_speed = super().get_next_speed(vehicle, action)
+        return self.is_violating_state(vehicle, lane_index, target_speed)
+
     def __str__(self):
         """To string function."""
         return "Braking"
 
 class CollisionNorm(MetricsDrivenNorm):
     """Norm constraint for avoiding collisions."""
-    def __init__(self, road: Road, min_ttc: float = 0.5):
+    def __init__(self, weight: int, road: Road, min_ttc: float = 1.5):
         """Initialize the collision constraint with a threshold.
 
         :param road: the road object to check for collision violations
         :param min_ttc: the minimum allowed TTC value
         """
-        super().__init__([
-            ACTION_STRINGS["IDLE"],
-            ACTION_STRINGS["FASTER"],
-            ACTION_STRINGS["SLOWER"]
-        ])
+        super().__init__(
+            weight,
+            [
+                ACTION_STRINGS["LANE_LEFT"],
+                ACTION_STRINGS["IDLE"],
+                ACTION_STRINGS["LANE_RIGHT"],
+                ACTION_STRINGS["FASTER"],
+                ACTION_STRINGS["SLOWER"] 
+                # testing: might still need failsafe slowdown if every action triggers collision
+                # technically, slowing down can cause a collision if the vehicle behind is too close so need to account for this
+            ]
+        )
         self.road    = road
         self.min_ttc = min_ttc
 
-    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
-        """Return the TTC between the ego vehicle and the vehicle ahead."""
-        ttc_front, _ = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index) # For now just use TTC 
-        return ttc_front
+    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
+        """Return the TTC between the ego vehicle and the vehicle ahead.""" # TODO: check if this is correct, dont we use this for behind too?
+        ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed) # For now just use TTC 
+        return (ttc_front, ttc_rear)
     
-    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
+    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
-        return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
-    
+        # return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
+        ttc_front, ttc_rear = self.evaluate_criteria(vehicle, lane_index, next_speed) 
+        return ttc_front < self.min_ttc or ttc_rear < self.min_ttc
+
+    def is_violating_action(self, action: Action, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
+        """Check if the action produces or worsens a collision violation."""
+        if action not in self.violating_actions:
+            return False
+        
+        # Get the predicted speed for this action
+        target_speed = super().get_next_speed(vehicle, action)
+        # DEBUG breakout logic #######
+        x =  self.is_violating_state(vehicle, lane_index, target_speed)
+
+        if action == ACTION_STRINGS["LANE_RIGHT"] and x:
+            print("LANE RIGHT VIOLATION", x, )
+            self.is_violating_state(vehicle, lane_index, target_speed)
+        
+        return x
+        ##############
+
     def __str__(self):
         """To string function."""
         return "Collision"
@@ -247,16 +296,21 @@ class LaneChangeNormProtocol(Protocol):
         """Check if the action produces a lane change violation."""
         pass
 
+    def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
+        """Check if the current state violates the norm."""
+        pass
+
     def __str__(self):
         """To string function."""
         pass
 
 class LaneChangeNormMixin:
     """Mixin class for shared lane change norm logic."""
-    def is_violating_action(self: LaneChangeNormProtocol, action: Action, vehicle: MDPVehicle):
+    def is_violating_action(self: LaneChangeNormProtocol, action: Action, vehicle: MDPVehicle) -> bool:
         """Check if the action produces a lane change violation."""
         # NOTE: The following lane change index logic is copied directly from the HighwayEnv code.
-        # Refer to: `highway_env.vehicle.controller.ControlledVehicle.act()`
+        # Refer to: `highway_env.vehicle.controller.ControlledVehicle.act()
+        # TODO: getting violations for lane changes that are not possible, need to account for this
         if action == ACTION_STRINGS["LANE_RIGHT"]:
             _from, _to, _id = vehicle.target_lane_index
             target_lane_index = (
@@ -282,29 +336,17 @@ class LaneChangeNormMixin:
         else:
             # This condition should never be reached, since there is no reason to check a lane change
             # norm violation if the action is not a lane change
-            return False
+            return False # TODO: this does get called from count_and_weigh_norm_violations
 
-        # Check for safe distance violations to the vehicle ahead and the vehicle behind
-        _, v_rear = self.road.neighbour_vehicles(vehicle, target_lane_index)
-        if v_rear is not None:
-            is_front_violation  = super().is_violating_action(action, vehicle, target_lane_index)
-
-            ####### for debugging #######
-            if is_front_violation and action in [
-                # ACTION_STRINGS["LANE_LEFT"],
-                ACTION_STRINGS["LANE_RIGHT"]
-            ]:
-                # for debug
-                print("Front violation detected for lane change action:", action)
-            ####### for debugging #######
-
-            return is_front_violation or super().is_violating_action(action, v_rear, target_lane_index)
-        # If there is no vehicle behind, only check for violation to the vehicle ahead
-        return super().is_violating_action(action, vehicle, target_lane_index)
+        # Simply check if the current state would violate the norm in the target lane
+        # The parent class's is_violating_state method already handles both front and rear vehicles
+        next_speed = super().get_next_speed(vehicle, action)
+        return self.is_violating_state(vehicle, target_lane_index, next_speed)
     
     def __str__(self):
         """To string function."""
         return "LaneChange"
+
 
 class LaneChangeTailgatingNorm(LaneChangeNormMixin, TailgatingNorm):
     """Norm constraint for enforcing safe distances for lane changes."""
@@ -344,13 +386,13 @@ class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
 
 class LaneChangeCollisionNorm(LaneChangeNormMixin, CollisionNorm):
     """Norm constraint for avoiding collisions due to lane changes."""
-    def __init__(self, road: Road, min_ttc: float = 0.5):
+    def __init__(self, weight: int, road: Road, min_ttc: float = 0.5):
         """Initialize the collision constraint with a threshold.
 
         :param road: the road object to check for collision violations
         :param min_ttc: the minimum allowed TTC value
         """
-        super().__init__(road, min_ttc)
+        super().__init__(weight, road, min_ttc)
         self.violating_actions = [
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]
