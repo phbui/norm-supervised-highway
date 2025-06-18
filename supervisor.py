@@ -56,6 +56,7 @@ class Supervisor:
             norms.BrakingNorm(
                 weight=50,
                 road=self.env_unwrapped.road,
+                min_ttc=self.BRAKING_THRESHOLD
             ),
             norms.LaneChangeTailgatingNorm(
                 weight=50,
@@ -70,7 +71,8 @@ class Supervisor:
             ),
             norms.LaneChangeBrakingNorm(
                 weight=50,
-                road=self.env_unwrapped.road
+                road=self.env_unwrapped.road,
+                min_ttc=self.BRAKING_THRESHOLD
             )
 
         ]
