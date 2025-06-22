@@ -18,7 +18,7 @@
   "screen_height": 150,
   "centering_position": [0.3, 0.5],
   "scaling": 5.5,
-  "show_trajectories": false,
-  "render_agent": false,
-  "offscreen_rendering": true
+  "show_trajectories": true,
+  "render_agent": true,
+  "offscreen_rendering": false
 }

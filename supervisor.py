@@ -14,8 +14,10 @@ class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
     ACTIONS_ALL        = DiscreteMetaAction.ACTIONS_ALL
     ACTION_STRINGS     = norms.ACTION_STRINGS
-    SPEED_THRESHOLD    = 30   # Speed limit (m/s)
-    BRAKING_THRESHOLD  = 1.5  # Minimum TTC (s)
+    SPEED_THRESHOLD    = 25   # Speed limit (m/s) # TODO: base off of simulation frequency
+    BRAKING_THRESHOLD  = 2.5  # Minimum TTC (s)
+    COLLISION_THRESHOLD = 1.5  # Minimum TTC (s) # placeholder
+    LANE_CHANGE_COLLISION_THRESHOLD = 1.5  # Minimum TTC (s) # placeholder
 
     def __init__(self, env_unwrapped: HighwayEnv, env_config: dict, verbose=False):
         """Initialize the supervisor with the environment and configuration.
@@ -46,20 +48,33 @@ class Supervisor:
                 action_type=self.env_unwrapped.action_type,
                 simulation_frequency=self.env_config["simulation_frequency"]
             ),
+            norms.CollisionNorm(
+                weight=5000000,
+                road=self.env_unwrapped.road,
+                min_ttc=self.COLLISION_THRESHOLD
+            ),
             norms.BrakingNorm(
                 weight=5,
-                road=self.env_unwrapped.road
+                road=self.env_unwrapped.road,
+                min_ttc=self.BRAKING_THRESHOLD
             ),
             norms.LaneChangeTailgatingNorm(
-                weight=5,
+                weight=50,
                 road=self.env_unwrapped.road,
                 action_type=self.env_unwrapped.action_type,    
                 simulation_frequency=self.env_config["simulation_frequency"]
             ),
-            norms.LaneChangeBrakingNorm(
-                weight=5,
+            norms.LaneChangeCollisionNorm(
+                min_ttc=self.LANE_CHANGE_COLLISION_THRESHOLD,
+                weight=5000000,
                 road=self.env_unwrapped.road
+            ),
+            norms.LaneChangeBrakingNorm(
+                weight=50,
+                road=self.env_unwrapped.road,
+                min_ttc=self.BRAKING_THRESHOLD
             )
+
         ]
     
     def count_and_weigh_norm_violations(self, action: Action) -> int:
@@ -100,7 +115,7 @@ class Supervisor:
         """
         Given raw action_probs (softmax over Q), 
         penalize norm-violating actions,
-        select via ε-greedy
+        select action with highest probability
         """
         if self.verbose:
             print(f"Original action: {self.ACTIONS_ALL[selected_action]} | Norm violations: {violations}")
@@ -118,7 +133,7 @@ class Supervisor:
             violation_weights = np.zeros(n, dtype=int)
             violations_weights_dicts = {a: 0 for a in range(n)}
             for a in range(n):
-                # Instead of count_action_nrom_violations, we could look at the weight of norms and their violations here
+                # Instead of count_action_norm_violations, we could look at the weight of norms and their violations here
                 v, v_d, vw, vw_d = self.count_and_weigh_norm_violations(a)
                 violation_counts[a]        = v
                 violations_dicts[a]        = v_d
@@ -138,7 +153,9 @@ class Supervisor:
             if self.verbose:
                 print("Adjusted action probs:")
                 for i, p in enumerate(adj_prob):
-                    print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]})")
+                    violated_norms = [norm for norm, count in violations_dicts[i].items() if count > 0]
+                    violated_str = ", ".join(violated_norms) if violated_norms else "None"
+                    print(f"  {self.ACTIONS_ALL[i]}: {p:.3f} (viol={violation_counts[i]}) [Violated: {violated_str}]")
 
             selected_action = int(adj_prob.argmax())
 
@@ -148,7 +165,8 @@ class Supervisor:
             selected_violations_weight_dict = violations_weights_dicts[selected_action]
         
         if self.verbose:
-            print(f"Chose: {self.ACTIONS_ALL[selected_action]} | Norm violations: {selected_violations} | Norm violation weight: {selected_violations_weight}")
+            selected_violated_norms = [norm for norm, count in selected_violations_dict.items() if count > 0]
+            print(f"Chose: {self.ACTIONS_ALL[selected_action]} | Norm violations: {selected_violations} | Norm violation weight: {selected_violations_weight} | Violated norms: {', '.join(selected_violated_norms) if selected_violated_norms else 'None'}")
 
         return selected_action, selected_violations, selected_violations_dict, selected_violations_weight, selected_violations_weight_dict
 
@@ -179,3 +197,10 @@ class Supervisor:
         for presence, x, y, vx, vy in obs[1:]:
             if presence:
                 print(f"Vehicle: x={x}, y={y}, vx={vx}, vy={vy}")
+
+
+# notes
+# when changing lanes, the ego vehicle acclerates first then moves to the new lane, 
+# we need to check if the ego vehicle is colliding with the vehicle in the same lane before the lane change
+# some collisions are caused by ego and a another vehicle switching into the same lane from opposite directions, this is a nuanced issue we might want to track and handle 
+# might need different logic for lane chage with leading vs following vehicles

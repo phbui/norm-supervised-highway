@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.typing as npt
+from typing import Optional
 
 from highway_env.envs.common.action import DiscreteMetaAction
 from highway_env.road.road import Road, LaneIndex
@@ -22,14 +23,19 @@ def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
         return np.inf
     if v_rear.position[0] >= v_front.position[0]:
         raise ValueError("The following vehicle must be behind the leading vehicle.")
-    # There is no collision course if the following vehicle is slower than the leading vehicle
+    
+    # check if vehicle is overlapping positions (for lane change, detects if positions are overlapping ie. collision)
+    if v_front.position[0] - v_rear.position[0] <= Vehicle.LENGTH:
+        return 0.0
+    
     if v_rear.velocity[0] <= v_front.velocity[0]:
         return np.inf
+
     # TTC = (x_front - x_rear - length) / (vx_rear - vx_front)
     return ((v_front.position[0] - v_rear.position[0] - Vehicle.LENGTH)
             / (v_rear.velocity[0] - v_front.velocity[0]))
 
-def calculate_neighbour_ttcs(vehicle: Vehicle, road: Road, lane_index: LaneIndex = None) -> tuple[float, float]:
+def calculate_neighbour_ttcs(vehicle: Vehicle, road: Road, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
     """
     Calculate the TTCs for neighboring vehicles of the given vehicle, assuming straight lanes.
 
@@ -40,14 +46,29 @@ def calculate_neighbour_ttcs(vehicle: Vehicle, road: Road, lane_index: LaneIndex
 
     :param vehicle: the vehicle for which to compute neighbor TTC values
     :param road: the corresponding road object from the game environment
+    :param lane_index: optional lane index to check (if None, uses vehicle's current lane)
+    :param next_speed: optional speed for the ego vehicle (if None, uses current velocity)
 
     :return: the TTC values for the leading vehicle and following vehicle. Returns None if there is
         no projected collision between the vehicles.
     """
     if vehicle not in road.vehicles:
         raise ValueError("The given vehicle is not driving on the given road.")
+    
+    # Save original speed
+    original_speed = vehicle.velocity[0]
+    
+    # Temporarily set the predicted speed if provided
+    if next_speed is not None:
+        vehicle.velocity[0] = next_speed
+    
     v_front, v_rear = road.neighbour_vehicles(vehicle, lane_index)
-    return (calculate_ttc(v_front, vehicle), calculate_ttc(vehicle, v_rear))
+    ttc_front, ttc_rear = calculate_ttc(v_front, vehicle), calculate_ttc(vehicle, v_rear)
+    
+    # Restore original speed
+    vehicle.velocity[0] = original_speed
+    
+    return (ttc_front, ttc_rear)
 
 def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,
                   ttc_threshold: float = 2.0) -> float:
@@ -93,7 +114,7 @@ def calculate_safe_distance(speed: float, action_type: DiscreteMetaAction,
     alpha = 0.5 * acc_max + 0.5 * acc_max ** 2 / decc_min
     beta = speed * ( 1 + acc_max / decc_min)
     gamma = 0.5 * speed ** 2 / decc_min
-    return alpha * step_size ** 2 + beta * step_size + gamma
+    return alpha * step_size ** 2 + beta * step_size + gamma 
 
 def calculate_safety_score(
         distance: float,
