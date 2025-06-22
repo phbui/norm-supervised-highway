@@ -8,7 +8,8 @@ from highway_env.envs.common.action import Action
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.envs.common.action import DiscreteMetaAction
 
-import norms
+from norm_supervisor.norms.abstract import AbstractNorm
+import norm_supervisor.norms.norms as norms
 
 class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
@@ -37,7 +38,7 @@ class Supervisor:
         This method must be called every time the environment is reset to update the norm checkers
         with the new state of the environment.
         """
-        self.norms: list[norms.MetricsDrivenNorm] = [
+        self.norms: list[AbstractNorm] = [
             norms.SpeedingNorm(
                 weight=5, 
                 speed_limit=self.SPEED_THRESHOLD
@@ -74,7 +75,6 @@ class Supervisor:
                 road=self.env_unwrapped.road,
                 min_ttc=self.BRAKING_THRESHOLD
             )
-
         ]
     
     def count_and_weigh_norm_violations(self, action: Action) -> int:
