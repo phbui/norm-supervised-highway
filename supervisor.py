@@ -54,7 +54,7 @@ class Supervisor:
                 min_ttc=self.COLLISION_THRESHOLD
             ),
             norms.BrakingNorm(
-                weight=50,
+                weight=5,
                 road=self.env_unwrapped.road,
                 min_ttc=self.BRAKING_THRESHOLD
             ),

@@ -81,7 +81,6 @@ class MetricsDrivenNorm(ABC):
             speed_index_change = -1
         elif action == ACTION_STRINGS["LANE_LEFT"] or action == ACTION_STRINGS["LANE_RIGHT"]:
             # Lane changes typically involve slight speed adjustments
-            # For now, assume they maintain current speed, but could be adjusted
             speed_index_change = 1
         else:  # IDLE or other actions
             speed_index_change = 0
@@ -257,9 +256,11 @@ class CollisionNorm(MetricsDrivenNorm):
         self.min_ttc = min_ttc
 
     def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
-        """Return the TTC between the ego vehicle and the vehicle ahead.""" # TODO: check if this is correct, dont we use this for behind too?
-        ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed) # For now just use TTC 
+        """Return the TTC between the ego vehicle and the vehicle ahead."""
+        ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed) 
         return (ttc_front, ttc_rear)
+        
+        
     
     def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""

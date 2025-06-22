@@ -103,7 +103,8 @@ def main(env_name = "highway-fast-v0"):
             num_violations_weight_difference = 0
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
-            supervisor = Supervisor(env.unwrapped, env_config, verbose=False if mode == "WITH SUPERVISOR" else False) 
+            verbose_supervisor = False # set for verbose output
+            supervisor = Supervisor(env.unwrapped, env_config, verbose=verbose_supervisor if mode == "WITH SUPERVISOR" else False) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_violations_weight_dict = {str(norm): 0 for norm in supervisor.norms}
