@@ -6,8 +6,8 @@ import os
 
 from stable_baselines3 import DQN
 
-from supervisor import Supervisor
-import metrics
+from norm_supervisor.supervisor import Supervisor
+import norm_supervisor.metrics as metrics
 
 BASE_SEED = 239
 

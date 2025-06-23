@@ -53,7 +53,7 @@ def main():
         gradient_steps=training_config.get("gradient_steps", 1),
         target_update_interval=training_config.get("target_update_interval", 50),
         verbose=1,
-        tensorboard_log=training_config.get("tensorboard_log", "highway_dqn/")
+        tensorboard_log=training_config.get("tensorboard_log", "models/highway_dqn/")
     )
 
     print("\nStarting training...")

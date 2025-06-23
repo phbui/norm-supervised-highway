@@ -15,8 +15,8 @@ plt.rcParams.update({
     'legend.title_fontsize': 18
 })
 
-RESULTS_DIR = "results"
-OUTPUT_DIR = "analysis"
+RESULTS_DIR = "../results"
+OUTPUT_DIR = "../results/plots"
 OUTPUT_FILE = "comparison_grouped.png"
 LEGEND_FILE = "legend_grouped.png"
 

@@ -1,0 +1,30 @@
+[project]
+name = "norm-supervisor"
+version = "0.1.0"
+description = "Normative supervision implemented for the HighwayEnv driving environment."
+authors = [
+    {name = "Thomas Howell", email = "thomas.howell@tufts.edu"},
+    {name = "Robert McPherson", email = "robert.mcpherson@tufts.edu"},
+    {name = "Phi Bui", email = "philip.bui@tufts.edu"},
+    {name = "Yuqi Ye", email = "yuqi.ye@tufts.edu"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "gymnasium>=1.0.0a2",
+  "highway-env>=1.10.1",
+  "matplotlib>=3.10.1",
+  "numpy>=2.2.4",
+  "pygame>=2.0.2",
+  "setuptools>=75.8.0",
+  "stable-baselines3==2.6.0",
+  "torch==2.7.1",
+  "typing_extensions>=4.13.1",
+  "wheel>=0.45.1"
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["norm_supervisor", "norm_supervisor.*"]
