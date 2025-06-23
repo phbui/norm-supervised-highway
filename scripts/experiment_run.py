@@ -7,6 +7,7 @@ import os
 from stable_baselines3 import DQN
 
 from norm_supervisor.supervisor import Supervisor
+import norm_supervisor.norms.norms as norms
 import norm_supervisor.metrics as metrics
 
 BASE_SEED = 239
@@ -118,7 +119,11 @@ def main(env_name = "highway-fast-v0"):
                 obs, _ = env.reset(seed=episode_seed) # <- seeded
                 supervisor.reset_norms()
                 # Used for safety score calculations
-                tailgating_norm = supervisor.norms[0]
+                tailgating_norm = norms.TailgatingNorm(
+                    weight=5,
+                    action_type=env.unwrapped.action_type,
+                    simulation_frequency=env_config["simulation_frequency"]
+                )
                 local_num_violations = 0
                 local_num_avoided = 0
                 local_violations_weight_difference = 0
@@ -133,11 +138,19 @@ def main(env_name = "highway-fast-v0"):
                 while not (done or truncated):
                     tstep += 1
                     action, _  = model.predict(obs, deterministic=True)
-                    violations, violations_dict, violations_weight, violations_weight_dict = supervisor.count_and_weigh_norm_violations(action)
+                    action = action.item()
+                    violations_dict = supervisor._count_norm_violations(action)
+                    violations = sum(violations_dict.values())
+                    violations_weight_dict = supervisor._weight_norm_violations(violations_dict)
+                    violations_weight = sum(violations_weight_dict.values())
 
                     if mode == "WITH SUPERVISOR":
                         # Select new action and compute number of avoided violations
-                        new_action, new_violations, new_violations_dict, new_violations_weight, new_violations_weight_dict  = supervisor.decide_action(model, obs)
+                        new_action = supervisor.decide_action(model, obs)
+                        new_violations_dict = supervisor._count_norm_violations(new_action)
+                        new_violations = sum(new_violations_dict.values())
+                        new_violations_weight_dict = supervisor._weight_norm_violations(new_violations_dict)
+                        new_violations_weight = sum(new_violations_weight_dict.values())
                         avoided                 = violations - new_violations
                         avoided_violations_dict = {norm: violations_dict.get(norm, 0) - new_violations_dict.get(norm, 0) for norm in set(violations_dict) | set(new_violations_dict)}
                         weight_difference       = violations_weight - new_violations_weight
@@ -160,10 +173,10 @@ def main(env_name = "highway-fast-v0"):
                     count_by_presence(local_violations_weight_dict, violations_weight_dict)
                     count_by_presence(local_violations_weight_difference_dict, weight_difference_dict)
 
-                    ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
+                    ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle)
                     local_ttc_history.append(ttcs[0])
 
-                    distance = tailgating_norm.evaluate_criteria(env.unwrapped.vehicle)
+                    distance = tailgating_norm.evaluate_criterion(env.unwrapped.vehicle)
                     safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle.speed, env.unwrapped.action_type, env_config["simulation_frequency"])
                     safety_score = metrics.calculate_safety_score(distance, safe_distance)
                     local_safety_scores.append(safety_score)

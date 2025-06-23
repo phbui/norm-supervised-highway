@@ -16,12 +16,12 @@ def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
 
     :param v_front: the leading vehicle
     :param v_rear: the following vehicle
-
     :return: the TTC value in seconds, or np.inf if there is no projected collision
     """
     if v_front is None or v_rear is None:
         return np.inf
     if v_rear.position[0] >= v_front.position[0]:
+        print(f"Warning: {v_rear} is not behind {v_front}.")
         raise ValueError("The following vehicle must be behind the leading vehicle.")
     
     # check if vehicle is overlapping positions (for lane change, detects if positions are overlapping ie. collision)
@@ -35,39 +35,30 @@ def calculate_ttc(v_front: Vehicle, v_rear: Vehicle) -> float:
     return ((v_front.position[0] - v_rear.position[0] - Vehicle.LENGTH)
             / (v_rear.velocity[0] - v_front.velocity[0]))
 
-def calculate_neighbour_ttcs(vehicle: Vehicle, road: Road, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
+def calculate_neighbour_ttcs(
+    vehicle: Vehicle,
+    lane_index: LaneIndex = None,
+    next_speed: float = None
+) -> tuple[float, float]:
     """
     Calculate the TTCs for neighboring vehicles of the given vehicle, assuming straight lanes.
 
-    Example usage::
-
-        env = gymnasium.make("highway-fast-v0")
-        ttc_front, ttc_rear = neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
-
     :param vehicle: the vehicle for which to compute neighbor TTC values
-    :param road: the corresponding road object from the game environment
     :param lane_index: optional lane index to check (if None, uses vehicle's current lane)
-    :param next_speed: optional speed for the ego vehicle (if None, uses current velocity)
-
-    :return: the TTC values for the leading vehicle and following vehicle. Returns None if there is
-        no projected collision between the vehicles.
+    :return: the TTC values for the leading vehicle and following vehicle.
     """
-    if vehicle not in road.vehicles:
-        raise ValueError("The given vehicle is not driving on the given road.")
-    
-    # Save original speed
-    original_speed = vehicle.velocity[0]
-    
-    # Temporarily set the predicted speed if provided
-    if next_speed is not None:
-        vehicle.velocity[0] = next_speed
-    
-    v_front, v_rear = road.neighbour_vehicles(vehicle, lane_index)
-    ttc_front, ttc_rear = calculate_ttc(v_front, vehicle), calculate_ttc(vehicle, v_rear)
-    
-    # Restore original speed
-    vehicle.velocity[0] = original_speed
-    
+    if next_speed is None:
+        vehicle_to_test = vehicle
+    else:
+        # Create a temporary vehicle with the next speed to calculate TTCs
+        vehicle_to_test = Vehicle(
+            road=vehicle.road,
+            position=vehicle.position,
+            speed=next_speed,
+        )
+    v_front, v_rear = vehicle.road.neighbour_vehicles(vehicle, lane_index)
+    ttc_front = calculate_ttc(v_front, vehicle_to_test)
+    ttc_rear  = calculate_ttc(vehicle_to_test, v_rear)   
     return (ttc_front, ttc_rear)
 
 def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,
