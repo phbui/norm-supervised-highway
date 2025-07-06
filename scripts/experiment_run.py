@@ -163,7 +163,7 @@ def main(env_name = "highway-fast-v0"):
                     ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
                     local_ttc_history.append(ttcs[0])
 
-                    distance = tailgating_norm.evaluate_criteria(env.unwrapped.vehicle)
+                    distance = tailgating_norm.evaluate_criterion(env.unwrapped.vehicle)
                     safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle.speed, env.unwrapped.action_type, env_config["simulation_frequency"])
                     safety_score = metrics.calculate_safety_score(distance, safe_distance)
                     local_safety_scores.append(safety_score)

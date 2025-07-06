@@ -47,13 +47,13 @@ class SpeedingNorm(AbstractNorm):
         ])
         self.speed_limit = speed_limit
 
-    def evaluate_criteria(self, vehicle: MDPVehicle) -> float:
+    def evaluate_criterion(self, vehicle: MDPVehicle) -> float:
         """Return the speed of the ego vehicle."""
         return vehicle.speed
     
     def is_violating_state(self, vehicle: MDPVehicle) -> bool:
         """Check if the vehicle is exceeding the speed limit."""
-        return self.evaluate_criteria(vehicle) > self.speed_limit
+        return self.evaluate_criterion(vehicle) > self.speed_limit
     
     def is_violating_action(self, action: Action, vehicle: MDPVehicle) -> bool:
         """Check if the action produces or worsens a speed limit violation."""
@@ -88,7 +88,7 @@ class TailgatingNorm(AbstractNorm):
         self.action_type          = action_type
         self.simulation_frequency = simulation_frequency
 
-    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
+    def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
         """Return the distance to the vehicle ahead."""
         v_front, _ = self.road.neighbour_vehicles(vehicle, lane_index)
         if v_front is not None:
@@ -110,7 +110,7 @@ class TailgatingNorm(AbstractNorm):
         safe_distance = metrics.calculate_safe_distance(
             speed, self.action_type, self.simulation_frequency
         )
-        return self.evaluate_criteria(vehicle, lane_index) < safe_distance
+        return self.evaluate_criterion(vehicle, lane_index) < safe_distance
     
     def is_violating_action(
         self,
@@ -146,14 +146,14 @@ class BrakingNorm(AbstractNorm):
         self.road    = road
         self.min_ttc = min_ttc
 
-    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> float:
+    def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> float:
         """Return the TTC between the ego vehicle and the rear following vehicle."""
         _, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed ) 
         return ttc_rear
     
     def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
-        return self.evaluate_criteria(vehicle, lane_index, next_speed) < self.min_ttc
+        return self.evaluate_criterion(vehicle, lane_index, next_speed) < self.min_ttc
     
     def is_violating_action(self, action: Action, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:
         """Check if the action produces or worsens a braking violation."""
@@ -191,7 +191,7 @@ class CollisionNorm(AbstractNorm):
         self.road    = road
         self.min_ttc = min_ttc
 
-    def evaluate_criteria(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
+    def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
         """Return the TTC between the ego vehicle and the vehicle ahead."""
         ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed) 
         return (ttc_front, ttc_rear)
@@ -201,7 +201,7 @@ class CollisionNorm(AbstractNorm):
     def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
         """Check if the ego vehicle is within the minimum TTC to the vehicle ahead."""
         # return self.evaluate_criteria(vehicle, lane_index) < self.min_ttc
-        ttc_front, ttc_rear = self.evaluate_criteria(vehicle, lane_index, next_speed) 
+        ttc_front, ttc_rear = self.evaluate_criterion(vehicle, lane_index, next_speed) 
         return ttc_front < self.min_ttc or ttc_rear < self.min_ttc
 
     def is_violating_action(self, action: Action, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> bool:

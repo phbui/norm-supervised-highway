@@ -8,7 +8,7 @@ After cloning the repository, set up a virtual environment and install the requi
  
      virtualenv venv
      source venv/bin/activate
-     pip install .
+     pip install -e .
 
 ## Usage
 
