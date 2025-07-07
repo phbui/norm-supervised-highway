@@ -70,10 +70,9 @@ class SpeedingNorm(AbstractNorm):
 
 class TailgatingNorm(AbstractNorm):
     """Norm constraint for enforcing a safe following distance."""
-    def __init__(self, weight: int, road: Road, action_type: DiscreteMetaAction, simulation_frequency: float):
+    def __init__(self, weight: int, action_type: DiscreteMetaAction, simulation_frequency: float):
         """Initialize the tailgating constraint with a threshold.
 
-        :param road: the road object to check for tailgating violations
         :param action_type: the action type of the ego vehicle
         :param simulation_frequency: the frequency at which the simulation is running (in Hz)
         """
@@ -84,13 +83,12 @@ class TailgatingNorm(AbstractNorm):
             ACTION_STRINGS["FASTER"],
             ACTION_STRINGS["SLOWER"], # experimental: slower action can still be tailgating vs lane change
         ])
-        self.road                 = road
         self.action_type          = action_type
         self.simulation_frequency = simulation_frequency
 
     def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None) -> float:
         """Return the distance to the vehicle ahead."""
-        v_front, _ = self.road.neighbour_vehicles(vehicle, lane_index)
+        v_front, _ = vehicle.road.neighbour_vehicles(vehicle, lane_index)
         if v_front is not None:
             return v_front.position[0] - vehicle.position[0] - MDPVehicle.LENGTH
         return np.inf
@@ -132,10 +130,9 @@ class TailgatingNorm(AbstractNorm):
 
 class BrakingNorm(AbstractNorm):
     """Norm constraint for avoiding sudden braking."""
-    def __init__(self, weight: int, road: Road, min_ttc: float = 1.5):
+    def __init__(self, weight: int, min_ttc: float = 1.5):
         """Initialize the braking constraint with a threshold.
         
-        :param road: the road object to check for braking violations
         :param min_ttc: the minimum allowed TTC value
         """
         super().__init__(
@@ -143,12 +140,11 @@ class BrakingNorm(AbstractNorm):
         [
             ACTION_STRINGS["SLOWER"]
         ])
-        self.road    = road
         self.min_ttc = min_ttc
 
     def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> float:
         """Return the TTC between the ego vehicle and the rear following vehicle."""
-        _, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed ) 
+        _, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, lane_index, next_speed ) 
         return ttc_rear
     
     def is_violating_state(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> bool:
@@ -170,7 +166,7 @@ class BrakingNorm(AbstractNorm):
 
 class CollisionNorm(AbstractNorm):
     """Norm constraint for avoiding collisions."""
-    def __init__(self, weight: int, road: Road, min_ttc: float = 1.5):
+    def __init__(self, weight: int, min_ttc: float = 1.5):
         """Initialize the collision constraint with a threshold.
 
         :param road: the road object to check for collision violations
@@ -188,12 +184,11 @@ class CollisionNorm(AbstractNorm):
                 # technically, slowing down can cause a collision if the vehicle behind is too close so need to account for this
             ]
         )
-        self.road    = road
         self.min_ttc = min_ttc
 
     def evaluate_criterion(self, vehicle: MDPVehicle, lane_index: LaneIndex = None, next_speed: Optional[float] = None) -> tuple[float, float]:
         """Return the TTC between the ego vehicle and the vehicle ahead."""
-        ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, self.road, lane_index, next_speed) 
+        ttc_front, ttc_rear = metrics.calculate_neighbour_ttcs(vehicle, lane_index, next_speed) 
         return (ttc_front, ttc_rear)
         
         
@@ -227,8 +222,6 @@ class CollisionNorm(AbstractNorm):
     
 class LaneChangeNormProtocol(Protocol):
     """Protocol for lane change norm constraints."""
-    road: Road
-
     def is_violating_action(self, action: Action, vehicle: MDPVehicle) -> bool:
         """Check if the action produces a lane change violation."""
         pass
@@ -260,9 +253,9 @@ class LaneChangeNormMixin:
             target_lane_index = (
                 _from,
                 _to,
-                np.clip(_id + 1, 0, len(self.road.network.graph[_from][_to]) - 1),
+                np.clip(_id + 1, 0, len(vehicle.road.network.graph[_from][_to]) - 1),
             )
-            if self.road.network.get_lane(target_lane_index).is_reachable_from(
+            if vehicle.road.network.get_lane(target_lane_index).is_reachable_from(
                 vehicle.position
             ):
                 target_lane_index = target_lane_index
@@ -271,9 +264,9 @@ class LaneChangeNormMixin:
             target_lane_index = (
                 _from,
                 _to,
-                np.clip(_id - 1, 0, len(self.road.network.graph[_from][_to]) - 1),
+                np.clip(_id - 1, 0, len(vehicle.road.network.graph[_from][_to]) - 1),
             )
-            if self.road.network.get_lane(target_lane_index).is_reachable_from(
+            if vehicle.road.network.get_lane(target_lane_index).is_reachable_from(
                 vehicle.position
             ):
                 target_lane_index = target_lane_index
@@ -293,13 +286,13 @@ class LaneChangeNormMixin:
 
 class LaneChangeTailgatingNorm(LaneChangeNormMixin, TailgatingNorm):
     """Norm constraint for enforcing safe distances for lane changes."""
-    def __init__(self, weight: int, road: Road, action_type: DiscreteMetaAction, simulation_frequency: float):
+    def __init__(self, weight: int, action_type: DiscreteMetaAction, simulation_frequency: float):
         """Initialize the lane change tailgating constraint with a threshold.
 
         :param road: the road object to check for lane change violations
         :param min_ttc: the minimum allowed TTC value
         """
-        super().__init__(weight, road, action_type, simulation_frequency)
+        super().__init__(weight, action_type, simulation_frequency)
         self.violating_actions = [
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]
@@ -311,13 +304,13 @@ class LaneChangeTailgatingNorm(LaneChangeNormMixin, TailgatingNorm):
 
 class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
     """Norm constraint for avoiding sudden braking due to lane changes."""
-    def __init__(self, weight: int, road: Road, min_ttc: float = 1.5):
+    def __init__(self, weight: int, min_ttc: float = 1.5):
         """Initialize the braking constraint with a threshold.
 
         :param road: the road object to check for braking violations
         :param min_ttc: the minimum allowed TTC value
         """
-        super().__init__(weight, road, min_ttc)
+        super().__init__(weight, min_ttc)
         self.violating_actions = [
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]
@@ -329,13 +322,13 @@ class LaneChangeBrakingNorm(LaneChangeNormMixin, BrakingNorm):
 
 class LaneChangeCollisionNorm(LaneChangeNormMixin, CollisionNorm):
     """Norm constraint for avoiding collisions due to lane changes."""
-    def __init__(self, weight: int, road: Road, min_ttc: float = 0.5):
+    def __init__(self, weight: int, min_ttc: float = 0.5):
         """Initialize the collision constraint with a threshold.
 
         :param road: the road object to check for collision violations
         :param min_ttc: the minimum allowed TTC value
         """
-        super().__init__(weight, road, min_ttc)
+        super().__init__(weight, min_ttc)
         self.violating_actions = [
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]

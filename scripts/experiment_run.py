@@ -7,6 +7,7 @@ import os
 from stable_baselines3 import DQN
 
 from norm_supervisor.supervisor import Supervisor
+import norm_supervisor.norms.norms as norms
 import norm_supervisor.metrics as metrics
 
 BASE_SEED = 239
@@ -118,7 +119,11 @@ def main(env_name = "highway-fast-v0"):
                 obs, _ = env.reset(seed=episode_seed) # <- seeded
                 supervisor.reset_norms()
                 # Used for safety score calculations
-                tailgating_norm = supervisor.norms[0]
+                tailgating_norm = norms.TailgatingNorm(
+                    weight=5,
+                    action_type=env.unwrapped.action_type,
+                    simulation_frequency=env_config["simulation_frequency"]
+                )
                 local_num_violations = 0
                 local_num_avoided = 0
                 local_violations_weight_difference = 0
@@ -160,7 +165,7 @@ def main(env_name = "highway-fast-v0"):
                     count_by_presence(local_violations_weight_dict, violations_weight_dict)
                     count_by_presence(local_violations_weight_difference_dict, weight_difference_dict)
 
-                    ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle, env.unwrapped.road)
+                    ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle)
                     local_ttc_history.append(ttcs[0])
 
                     distance = tailgating_norm.evaluate_criterion(env.unwrapped.vehicle)
