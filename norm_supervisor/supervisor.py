@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.stats import entropy
-from scipy.stats import wasserstein_distance
 
 from stable_baselines3 import DQN
 from highway_env.envs.common.abstract import Observation
@@ -18,7 +17,7 @@ class Supervisor:
     ACTIONS_ALL = DiscreteMetaAction.ACTIONS_ALL
 
     SPEED_THRESHOLD     = 25   # Speed limit (m/s) TODO: base off of simulation frequency
-    BRAKING_THRESHOLD   = 2.5  # Minimum TTC (s)
+    BRAKING_THRESHOLD   = 3    # Minimum TTC (s)
     COLLISION_THRESHOLD = 0.5  # Minimum TTC (s), placeholder
 
     def __init__(
@@ -28,12 +27,17 @@ class Supervisor:
         kl_budget: float = 0.005,
         tol: float = 1e-6,
         max_iters: int = 100,
+        filter_only: bool = False,
         verbose=False):
         """Initialize the supervisor with the environment and configuration.
 
         :param env_unwrapped: the unwrapped HighwayEnv environment
         :param env_config: the environment configuration
         :param kl_budget: maximum KL-divergence for the supervisory policy.
+        :param tol: tolerance for the KL-divergence estimation.
+        :param max_iters: maximum number of iterations for the KL-divergence estimation.
+        :param filter_only: if True, only filter out impermissible actions without augmenting
+            action probabilities over the permissible action space.
         :param verbose: whether to print debug information
         """
         self.env_unwrapped = env_unwrapped
@@ -41,6 +45,7 @@ class Supervisor:
         self.kl_budget     = kl_budget
         self.tol           = tol
         self.max_iters     = max_iters
+        self.filter_only   = filter_only
         self.verbose       = verbose
         self.reset_norms()
 
@@ -51,22 +56,22 @@ class Supervisor:
         with the new state of the environment.
         """
         self.contraints: list[AbstractNorm] = [
-            norms.CollisionNorm(
+            norms.BrakingNorm(
                 weight=None,
                 min_ttc=self.COLLISION_THRESHOLD
             ),
-            norms.LaneChangeCollisionNorm(
+            norms.LaneChangeBrakingNorm(
                 weight=None,
                 min_ttc=self.COLLISION_THRESHOLD,
             ),
         ]
         self.norms: list[AbstractNorm] = [
             norms.SpeedingNorm(
-                weight=5, 
+                weight=4,
                 speed_limit=self.SPEED_THRESHOLD
             ),
             norms.TailgatingNorm(
-                weight=5,
+                weight=4,
                 action_type=self.env_unwrapped.action_type,
                 simulation_frequency=self.env_config["simulation_frequency"]
             ),
@@ -75,31 +80,31 @@ class Supervisor:
                 min_ttc=self.BRAKING_THRESHOLD
             ),
             norms.LaneChangeTailgatingNorm(
-                weight=50,
+                weight=4,
                 action_type=self.env_unwrapped.action_type,    
                 simulation_frequency=self.env_config["simulation_frequency"]
             ),
             norms.LaneChangeBrakingNorm(
-                weight=50,
+                weight=5,
                 min_ttc=self.BRAKING_THRESHOLD
             )
         ]
         self.norm_weights = {str(norm): norm.weight for norm in self.norms}
     
-    def _is_permissible(self, action: Action) -> bool:
+    def is_permissible(self, action: Action) -> bool:
         """Checks if an action violates any hard constraints."""
         return not any(c.is_violating_action(self.env_unwrapped.vehicle, action)
                        for c in self.contraints)
 
-    def _count_norm_violations(self, action: Action) -> dict[str, int]:
+    def count_norm_violations(self, action: Action) -> dict[str, int]:
         """Return a dictionary mapping norms to violation counts."""
         violations_dict = {str(norm): 0 for norm in self.norms}
         for norm in self.norms:
-            if norm.is_violating_action(action, self.env_unwrapped.vehicle):
+            if norm.is_violating_action(self.env_unwrapped.vehicle, action):
                 violations_dict[str(norm)] += 1
         return  violations_dict
 
-    def _weight_norm_violations(self, violations_count: dict[str, int]) -> dict[str, int]:
+    def weight_norm_violations(self, violations_count: dict[str, int]) -> dict[str, int]:
         """Return a dictionary mapping norms to weighted violation counts."""
         return {norm: violations_count[norm] * self.norm_weights[norm] for norm in violations_count}
 
@@ -115,7 +120,7 @@ class Supervisor:
 
         action_probs = probs_tensor.squeeze(0).cpu().numpy()  # shape (n_actions,)
         if self.verbose:
-            print("Action Probabilities:")
+            print("Model Policy Probabilities:")
             for action, prob in enumerate(action_probs):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         return action_probs
@@ -124,9 +129,9 @@ class Supervisor:
         """Computes the maximally safe policy according to the norm base."""
         violation_tensor = torch.zeros(len(self.ACTIONS_ALL))
         for i, action in enumerate(self.ACTIONS_ALL):
-            if self._is_permissible(action):
-                violations_count = self._count_norm_violations(action)
-                violation_tensor[i] = -sum(self._weight_norm_violations(violations_count).values())
+            if self.is_permissible(action):
+                violations_count = self.count_norm_violations(action)
+                violation_tensor[i] = -sum(self.weight_norm_violations(violations_count).values())
             else:
                 violation_tensor[i] = -torch.inf
             
@@ -165,6 +170,12 @@ class Supervisor:
             print("Filtered Model Policy Probabilities:")
             for action, prob in zip(permissible_indices, model_policy_filtered):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
+        
+        # Return early if the supervisor is in filter-only mode
+        if self.filter_only:
+            updated_policy = np.zeros_like(model_policy)
+            updated_policy[permissible_mask] = model_policy_filtered
+            return updated_policy
 
         low, high = 0.0, 1.0
         for _ in range(self.max_iters):
@@ -201,7 +212,6 @@ class Supervisor:
 
         :param model: DQN model
         :param obs: observation from the environment
-
         :return: norm-compliant action selection
         """ 
         model_policy = self._get_model_policy(model, obs)

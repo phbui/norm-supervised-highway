@@ -1,4 +1,5 @@
 from collections import defaultdict
+from time import sleep
 import gymnasium
 import json
 import numpy as np
@@ -76,10 +77,10 @@ def main(env_name = "highway-fast-v0"):
     model = DQN.load(model_path)
     model.set_random_seed(BASE_SEED)
 
-    num_experiments = 5
+    num_experiments = 1
     num_episodes = 100
 
-    results = {"WITH SUPERVISOR": [], "WITHOUT SUPERVISOR": []}
+    results = {"WITH SUPERVISOR": [], "WITH SUPERVISOR FILTER ONLY": [], "WITHOUT SUPERVISOR": []}
 
     for mode in results.keys():
         all_collisions = []
@@ -105,7 +106,12 @@ def main(env_name = "highway-fast-v0"):
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             verbose_supervisor = False # set for verbose output
-            supervisor = Supervisor(env.unwrapped, env_config, verbose=verbose_supervisor if mode == "WITH SUPERVISOR" else False) 
+            supervisor = Supervisor(
+                env.unwrapped,
+                env_config,
+                filter_only=mode.endswith("FILTER ONLY"),
+                verbose=verbose_supervisor if mode.startswith("WITH SUPERVISOR") else False
+            ) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_avoided_violations_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_violations_weight_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -139,17 +145,17 @@ def main(env_name = "highway-fast-v0"):
                     tstep += 1
                     action, _  = model.predict(obs, deterministic=True)
                     action = action.item()
-                    violations_dict = supervisor._count_norm_violations(action)
+                    violations_dict = supervisor.count_norm_violations(action)
                     violations = sum(violations_dict.values())
-                    violations_weight_dict = supervisor._weight_norm_violations(violations_dict)
+                    violations_weight_dict = supervisor.weight_norm_violations(violations_dict)
                     violations_weight = sum(violations_weight_dict.values())
 
-                    if mode == "WITH SUPERVISOR":
+                    if mode.startswith("WITH SUPERVISOR"):
                         # Select new action and compute number of avoided violations
                         new_action = supervisor.decide_action(model, obs)
-                        new_violations_dict = supervisor._count_norm_violations(new_action)
+                        new_violations_dict = supervisor.count_norm_violations(new_action)
                         new_violations = sum(new_violations_dict.values())
-                        new_violations_weight_dict = supervisor._weight_norm_violations(new_violations_dict)
+                        new_violations_weight_dict = supervisor.weight_norm_violations(new_violations_dict)
                         new_violations_weight = sum(new_violations_weight_dict.values())
                         avoided                 = violations - new_violations
                         avoided_violations_dict = {norm: violations_dict.get(norm, 0) - new_violations_dict.get(norm, 0) for norm in set(violations_dict) | set(new_violations_dict)}
@@ -163,6 +169,8 @@ def main(env_name = "highway-fast-v0"):
                     else:
                         avoided = 0
                         weight_difference = 0
+                        avoided_violations_dict = {norm: 0 for norm in violations_dict}
+                        weight_difference_dict = {norm: 0 for norm in violations_dict}
 
                     local_num_violations                += violations
                     local_violations_weight             += violations_weight
@@ -220,7 +228,8 @@ def main(env_name = "highway-fast-v0"):
                       f"TET: {ep_tets[-1]:.2f} seconds, " +
                       f"Safety Score: {ep_safety_scores[-1]:.2f}")
 
-                # env.render()  # Uncomment if you want to render the environment
+                #env.render()  # Uncomment if you want to render the environment
+                #sleep(1)
 
             all_collisions.append(num_collision)
             all_violations.append(num_violations)
