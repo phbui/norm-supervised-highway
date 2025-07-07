@@ -138,11 +138,19 @@ def main(env_name = "highway-fast-v0"):
                 while not (done or truncated):
                     tstep += 1
                     action, _  = model.predict(obs, deterministic=True)
-                    violations, violations_dict, violations_weight, violations_weight_dict = supervisor.count_and_weigh_norm_violations(action)
+                    action = action.item()
+                    violations_dict = supervisor._count_norm_violations(action)
+                    violations = sum(violations_dict.values())
+                    violations_weight_dict = supervisor._weight_norm_violations(violations_dict)
+                    violations_weight = sum(violations_weight_dict.values())
 
                     if mode == "WITH SUPERVISOR":
                         # Select new action and compute number of avoided violations
-                        new_action, new_violations, new_violations_dict, new_violations_weight, new_violations_weight_dict  = supervisor.decide_action(model, obs)
+                        new_action = supervisor.decide_action(model, obs)
+                        new_violations_dict = supervisor._count_norm_violations(new_action)
+                        new_violations = sum(new_violations_dict.values())
+                        new_violations_weight_dict = supervisor._weight_norm_violations(new_violations_dict)
+                        new_violations_weight = sum(new_violations_weight_dict.values())
                         avoided                 = violations - new_violations
                         avoided_violations_dict = {norm: violations_dict.get(norm, 0) - new_violations_dict.get(norm, 0) for norm in set(violations_dict) | set(new_violations_dict)}
                         weight_difference       = violations_weight - new_violations_weight
