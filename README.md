@@ -8,7 +8,7 @@ After cloning the repository, set up a virtual environment and install the requi
  
      virtualenv venv
      source venv/bin/activate
-     pip install -r requirements.txt
+     pip install -e .
 
 ## Usage
 
@@ -22,7 +22,7 @@ After cloning the repository, set up a virtual environment and install the requi
 
 ## Results
 
-You can specify a directory for the results when you run the experiment scripts. The results generated for our paper are in the `results` directory. Generated plots will be written to the `analysis` directory by default.
+You can specify a directory for the results when you run the experiment scripts. The results generated for our paper are in the `results` directory. Generated plots will be written to the `results/plots` directory by default.
 
 
 ## License
