@@ -83,7 +83,6 @@ def main(env_name = "highway-fast-v0"):
     results = {
         "WITH SUPERVISOR": [],
         "WITH SUPERVISOR FILTER ONLY": [],
-        "WITH SUPERVISOR MAXIMALLY SAFE": [],
         "WITHOUT SUPERVISOR": []
     }
 
@@ -112,12 +111,8 @@ def main(env_name = "highway-fast-v0"):
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             verbose_supervisor = False # set for verbose output
-            if mode.endswith("FILTER ONLY"):
-                supervisor_mode = SupervisorMode.FILTER_ONLY
-            elif mode.endswith("MAXIMALLY SAFE"):
-                supervisor_mode = SupervisorMode.MAXIMALLY_SAFE
-            else:
-                supervisor_mode = SupervisorMode.DEFAULT
+            supervisor_mode = (SupervisorMode.FILTER_ONLY if mode.endswith("FILTER ONLY")
+                               else SupervisorMode.DEFAULT)
             supervisor = Supervisor(
                 env.unwrapped,
                 env_config,

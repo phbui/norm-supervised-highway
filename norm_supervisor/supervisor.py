@@ -1,60 +1,70 @@
 from enum import Enum
+from scipy.optimize import brentq, RootResults
 from scipy.stats import entropy
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn.functional as F
 
-from stable_baselines3 import DQN
 from highway_env.envs.common.abstract import Observation
 from highway_env.envs.common.action import Action
-from highway_env.envs.highway_env import HighwayEnv
 from highway_env.envs.common.action import DiscreteMetaAction
+from highway_env.envs.highway_env import HighwayEnv
+from stable_baselines3 import DQN
 
 from norm_supervisor.norms.abstract import AbstractNorm
 import norm_supervisor.norms.norms as norms
 
+# Type alias for 1D array of floating points
+FloatArray1D = npt.NDArray[np.float64] 
+
 class SupervisorMode(Enum):
-    """Enum for different modes of the supervisor."""
-    FILTER_ONLY = "filter_only"       # Only filter out impermissible actions
-    MAXIMALLY_SAFE = "maximally_safe" # Simply return the maximally safe policy
-    DEFAULT = "default"               # Use the default behavior, which combines both filtering and model policy
+    """Enum for supervisor modes."""
+    FILTER_ONLY = "filter_only" # Only filter out impermissible actions
+    DEFAULT     = "default"     # Filter and augment the policy to minimize norm violation cost
 
 class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
     ACTIONS_ALL = DiscreteMetaAction.ACTIONS_ALL
     SPEED_THRESHOLD     = 25   # Speed limit (m/s) TODO: base off of simulation frequency
     BRAKING_THRESHOLD   = 3    # Minimum TTC (s)
-    COLLISION_THRESHOLD = 0.5  # Minimum TTC (s), placeholder
+    # NOTE: The collision threshold must be greater than the policy period (1/policy_frequency).
+    COLLISION_THRESHOLD = 0.5  # Minimum TTC (s)
 
     def __init__(
         self,
         env_unwrapped: HighwayEnv,
         env_config: dict,
-        kl_budget: float = 0.005,
-        tol: float = 1e-6,
-        max_iters: int = 100,
         mode: SupervisorMode = SupervisorMode.DEFAULT,
-        verbose=False):
+        kl_budget: float = 0.005,
+        eta_max: float = 10.0,
+        eta_min: float = -10.0,
+        tol: float = 1e-4,
+        verbose=False
+    ) -> None:
         """Initialize the supervisor with the environment and configuration.
 
-        :param env_unwrapped: the unwrapped HighwayEnv environment
-        :param env_config: the environment configuration
+        :param env_unwrapped: the unwrapped HighwayEnv environment.
+        :param env_config: the environment configuration.
+        :param mode: the mode of the supervisor (FILTER_ONLY, DEFAULT).
         :param kl_budget: maximum KL-divergence for the supervisory policy.
+        :param eta_max: maximum value for the KL-divergence hyperparameter (eta=log(beta)).
+        :param eta_min: minimum value for the KL-divergence hyperparameter (eta=log(beta)).
         :param tol: tolerance for the KL-divergence estimation.
-        :param max_iters: maximum number of iterations for the KL-divergence estimation.
-        :param mode: the mode of the supervisor (FILTER_ONLY, MAXIMALLY_SAFE, DEFAULT)
-        :param verbose: whether to print debug information
+        :param verbose: whether to print debug information.
         """       
         self.env_unwrapped = env_unwrapped
         self.env_config    = env_config
-        self.kl_budget     = kl_budget
-        self.tol           = tol
-        self.max_iters     = max_iters
         self.mode          = mode
+        self.kl_budget     = kl_budget
+        self.eta_max       = eta_max
+        self.eta_min       = eta_min
+        self.tol           = tol
         self.verbose       = verbose
+
         self.reset_norms()
 
-    def reset_norms(self):
+    def reset_norms(self) -> None:
         """Reset the norms for the current environment.
         
         This method must be called every time the environment is reset to update the norm checkers
@@ -102,7 +112,7 @@ class Supervisor:
                        for c in self.contraints)
 
     def count_norm_violations(self, action: Action) -> dict[str, int]:
-        """Return a dictionary mapping norms to violation counts."""
+        """Return a dictionary mapping norms to violation counts for the given action."""
         violations_dict = {str(norm): 0 for norm in self.norms}
         for norm in self.norms:
             if norm.is_violating_action(self.env_unwrapped.vehicle, action):
@@ -110,124 +120,174 @@ class Supervisor:
         return  violations_dict
 
     def weight_norm_violations(self, violations_count: dict[str, int]) -> dict[str, int]:
-        """Return a dictionary mapping norms to weighted violation counts."""
+        """Return a dictionary of weighted norm costs given a dictionary of norm violations."""
         return {norm: violations_count[norm] * self.norm_weights[norm] for norm in violations_count}
+    
+    def get_norm_violation_cost(self) -> FloatArray1D:
+        """Return the norm violation cost vector for the current state."""
+        norm_violation_cost = np.zeros(len(self.ACTIONS_ALL))
+        for action in self.ACTIONS_ALL.keys():
+            violations_count = self.count_norm_violations(action)
+            weighted_violations = self.weight_norm_violations(violations_count)
+            norm_violation_cost[action] = sum(weighted_violations.values())
 
-    def _get_model_policy(self, model: DQN, obs: np.ndarray) -> np.ndarray:
+        return norm_violation_cost
+
+    def _get_model_policy(self, model: DQN, obs: FloatArray1D) -> FloatArray1D:
         """Return the action probabilities from the model for the given observation."""
         default_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         device = getattr(model, "device", default_device)
 
         obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
         with torch.no_grad():
-            q_tensor     = model.q_net(obs_tensor)            # shape (1, n_actions)
-            probs_tensor = F.softmax(q_tensor, dim=-1)        # still on device
+            q_tensor     = model.q_net(obs_tensor)            # Shape: (1, num_actions)
+            probs_tensor = F.softmax(q_tensor, dim=-1)        # Still on device
 
-        action_probs = probs_tensor.squeeze(0).cpu().numpy()  # shape (n_actions,)
+        action_probs = probs_tensor.squeeze(0).cpu().numpy()  # Shape: (num_actions,)
         if self.verbose:
             print("Model Policy Probabilities:")
             for action, prob in enumerate(action_probs):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         return action_probs
     
-    def _get_safe_policy(self) -> np.ndarray:
-        """Computes the maximally safe policy according to the norm base."""
-        violation_tensor = torch.zeros(len(self.ACTIONS_ALL))
-        for i, action in enumerate(self.ACTIONS_ALL):
-            if self.is_permissible(action):
-                violations_count = self.count_norm_violations(action)
-                violation_tensor[i] = -sum(self.weight_norm_violations(violations_count).values())
-            else:
-                violation_tensor[i] = -torch.inf
-            
-        safe_policy = F.softmax(violation_tensor, dim=0)
-        if self.verbose:
-            print("Safe Policy Probabilities:")
-            for action, prob in enumerate(safe_policy):
-                print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
-        return safe_policy.numpy()
-    
-    def _update_policy(self, model_policy: np.ndarray, safe_policy: np.ndarray) -> np.ndarray:
-        """Estimate the safest policy for which the KL-divergence is less than the threshold.
+    def _filter_policy(self, policy: FloatArray1D) -> FloatArray1D:
+        """Filter the given policy to only include permissible actions.
         
-        :param model_policy: action probabilities from the RL agent.
-        :param safe_policy: maximally safe action probabilities.
-        :return: updated policy that is a convex combination of the model and safe policies.
+        This method assigns zero probability to impermissible actions and then renormalizes the
+        distribution.
         """
-        def calculate_policy_update(
-            _model_policy: np.ndarray,
-            _safe_policy: np.ndarray,
-            _lambda: float
-        ) -> np.ndarray:
-            """Calculate the updated policy based on the model and safe policies."""
-            updated_policy = _model_policy ** (1 - _lambda) * _safe_policy ** _lambda
-            updated_policy /= sum(updated_policy)
-            return updated_policy
-
-        # Filter out impermissible actions
-        permissible_mask = ~np.isclose(safe_policy, 0.0)
-        model_policy_filtered = model_policy[permissible_mask]
-        safe_policy_filtered  = safe_policy[permissible_mask]
-        model_policy_filtered /= sum(model_policy_filtered)
-        safe_policy_filtered  /= sum(safe_policy_filtered)
+        permissible_mask = [self.is_permissible(action) for action in self.ACTIONS_ALL]
+        # If all actions are impermissible, return the original policy.
+        if not any(permissible_mask):
+            if self.verbose:
+                print("All actions are impermissible! Returning original policy.")
+            return policy
+        policy_permissible = policy[permissible_mask]
+        policy_permissible /= np.sum(policy_permissible)
+        policy_filtered = np.full_like(policy, 0.0)
+        policy_filtered[permissible_mask] = policy_permissible
         if self.verbose:
-            permissible_indices = np.nonzero(permissible_mask)[0]
             print("Filtered Model Policy Probabilities:")
-            for action, prob in zip(permissible_indices, model_policy_filtered):
+            for action, prob in enumerate(policy_filtered):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
+
+        return policy_filtered
+    
+    def _update_policy_supports(
+        self,
+        log_policy_supports: FloatArray1D,
+        cost_supports: FloatArray1D,
+        eta: float
+    ) -> FloatArray1D:
+        """Update the policy supports based on the hyperparameter eta.
         
-        # Return early if the supervisor is in filter-only mode
-        if self.mode == SupervisorMode.FILTER_ONLY:
-            updated_policy = np.zeros_like(model_policy)
-            updated_policy[permissible_mask] = model_policy_filtered
-            return updated_policy
+        :param log_policy_supports: precomputed policy supports in log space.
+        :param cost_supports: norm violation costs over the policy supports.
+        :param eta: hyperparameter for the KL-divergence estimation, where eta = log(beta).
+        :return: [policy * exp(cost / beta)] / Z (normalized).
+        """
+        logits = log_policy_supports - cost_supports / np.exp(eta)
+        logits -= np.max(logits)
+        updated_policy_supports = np.exp(logits)
+        updated_policy_supports /= np.sum(updated_policy_supports)
+        return updated_policy_supports
+    
+    def _augment_policy(self, policy: FloatArray1D) -> FloatArray1D:
+        """Augment the given policy to minimizes the expected norm violation cost.
 
-        low, high = 0.0, 1.0
-        for _ in range(self.max_iters):
-            mid = (low + high) / 2
-            updated_policy_filtered \
-                = calculate_policy_update(model_policy_filtered, safe_policy_filtered, mid)
-            kl_value = entropy(model_policy_filtered, updated_policy_filtered, nan_policy='raise')
+        The augmented policy minimizes the expected norm violation cost subject to a constraint on
+        the KL-divergence from the original policy. When there are infinite solutions, the policy
+        with the smallest KL-divergence is selected.
+        """
+        support_mask = ~np.isclose(policy, 0.0)
+        policy_supports = policy[support_mask]
+        if not np.isclose(policy_supports.sum(), 1.0):
+            raise ValueError(f"Policy supports do not sum to 1: {policy_supports.sum():.4f}")
 
-            if abs(kl_value - self.kl_budget) < self.tol:
-                break  # Found a good estimate
-            if kl_value > self.kl_budget:
-                high = mid # Too far, zoom in on lower half
-            else:
-                low = mid # Not far enough, zoom in on top half
-
-        # Return best estimate of the updated policy
-        best_estimate = (low + high) / 2
-        updated_policy_filterd \
-            = calculate_policy_update(model_policy_filtered, safe_policy_filtered, best_estimate)
-        updated_policy = np.zeros_like(model_policy)
-        updated_policy[permissible_mask] = updated_policy_filterd
+        # Cache cost vector for use in all computations.
+        cost = self.get_norm_violation_cost()
+        cost_supports = cost[support_mask]
         if self.verbose:
-            print(f"Best Estimate: {best_estimate:.3f}")
-            print(f"Updated Policy KL-Divergence: {entropy(model_policy_filtered, updated_policy_filtered)}")
-            print("Updated Policy Probabilities:")
+            print(f"Cost vector:")
+            for action, cost in enumerate(cost):
+                print(f"  {self.ACTIONS_ALL[action]}: {cost:.3f}")
+        
+        # Return the original policy if the cost function is uniform.
+        if np.allclose(cost_supports, cost_supports[0]):
+            if self.verbose:
+                print(f"All actions are equally norm compliant! No augmentation needed.")
+            return policy
+
+        # Check if optimal policy is within the KL budget.
+        min_cost_mask = np.isclose(cost_supports, np.min(cost_supports))
+        pi_cost_supports = np.zeros_like(policy_supports)
+        pi_cost_supports[min_cost_mask] = 1.0 / np.sum(min_cost_mask)
+        updated_policy_supports = policy_supports * min_cost_mask
+        updated_policy_supports /= np.sum(updated_policy_supports)
+        kl_value = entropy(updated_policy_supports, policy_supports, nan_policy='raise')
+        # Otherwise, saturate KL budget to minimize cost.
+        if kl_value > self.kl_budget:
+            # Cache log policy supports for use in all computations.
+            log_policy_supports = np.log(policy_supports)
+            def kl_gap(eta: float) -> float:
+                """Return the difference between the KL-divergence induced by eta and the budget."""
+                updated_policy_supports \
+                    = self._update_policy_supports(log_policy_supports, cost_supports, eta)
+                kl_value = entropy(updated_policy_supports, policy_supports, nan_policy='raise')
+                return kl_value - self.kl_budget
+
+            kl_gap_high = kl_gap(self.eta_min)
+            kl_gap_low  = kl_gap(self.eta_max)
+            if kl_gap_high * kl_gap_low > 0:
+                raise ValueError(f"KL constraint not bracketed: [({self.eta_min}, {kl_gap_high:.4f}), "
+                                f"({self.eta_max}, {kl_gap_low:.4f})]")
+
+            # Solve for eta using root-finding method.
+            eta_results: RootResults = brentq(
+                f=kl_gap,
+                a=self.eta_min,
+                b=self.eta_max,
+                xtol=self.tol,
+                full_output=True
+            )
+            eta_star = eta_results.root
+            if not eta_results.converged:
+                print(f"WARNING: KL-divergence estimation did not converge: {eta_results.flag}")
+
+            # Update policy supports.
+            updated_policy_supports \
+                = self._update_policy_supports(log_policy_supports, cost_supports, eta_star)
+            if self.verbose:
+                print(f"Best Estimate: {eta_star:.3f}")
+
+        # Construct updated policy from new supports.
+        updated_policy = np.full_like(policy, 0.0)
+        updated_policy[support_mask] = updated_policy_supports
+        if self.verbose:
+            print(f"Updated policy KL-divergence: {entropy(updated_policy_supports, policy_supports)}")
+            print("Updated policy:")
             for action, prob in enumerate(updated_policy):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         return updated_policy
 
     def decide_action(self, model: DQN, obs: Observation) -> Action:
-        """Decide which action the agent should take to comply with norms.
+        """Decide which action the agent should take based on the updated policy.
         
-        Manually selects an action which reduces the number of norm violations.
+        If the supervisor is in FILTER_ONLY mode, the model policy is filtered on hard constraints
+        and the highest probability action is returned. If the supervisor is in DEFAULT mode, the 
+        model policy is filtered and augmented for norm compliance, and the highest probability
+        action is returned.
 
-        :param model: DQN model
-        :param obs: observation from the environment
-        :return: norm-compliant action selection
+        :param model: DQN model.
+        :param obs: observation from the environment.
+        :return: final action selection.
         """ 
         model_policy = self._get_model_policy(model, obs)
-        safe_policy  = self._get_safe_policy()
-
-        # If the supervisor is in maximally safe mode, return the safe policy directly
-        if self.mode == SupervisorMode.MAXIMALLY_SAFE:
-            return safe_policy.argmax()
-
-        updated_policy = self._update_policy(model_policy, safe_policy)
-        return updated_policy.argmax()
+        policy_filtered = self._filter_policy(model_policy)
+        if self.mode == SupervisorMode.FILTER_ONLY:
+            return policy_filtered.argmax()
+        augmented_policy = self._augment_policy(policy_filtered)
+        return augmented_policy.argmax()
         
     @staticmethod
     def print_obs(obs: Observation):
