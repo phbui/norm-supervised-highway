@@ -1,7 +1,8 @@
+from enum import Enum
+from scipy.stats import entropy
 import numpy as np
 import torch
 import torch.nn.functional as F
-from scipy.stats import entropy
 
 from stable_baselines3 import DQN
 from highway_env.envs.common.abstract import Observation
@@ -12,10 +13,15 @@ from highway_env.envs.common.action import DiscreteMetaAction
 from norm_supervisor.norms.abstract import AbstractNorm
 import norm_supervisor.norms.norms as norms
 
+class SupervisorMode(Enum):
+    """Enum for different modes of the supervisor."""
+    FILTER_ONLY = "filter_only"       # Only filter out impermissible actions
+    MAXIMALLY_SAFE = "maximally_safe" # Simply return the maximally safe policy
+    DEFAULT = "default"               # Use the default behavior, which combines both filtering and model policy
+
 class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
     ACTIONS_ALL = DiscreteMetaAction.ACTIONS_ALL
-
     SPEED_THRESHOLD     = 25   # Speed limit (m/s) TODO: base off of simulation frequency
     BRAKING_THRESHOLD   = 3    # Minimum TTC (s)
     COLLISION_THRESHOLD = 0.5  # Minimum TTC (s), placeholder
@@ -27,7 +33,7 @@ class Supervisor:
         kl_budget: float = 0.005,
         tol: float = 1e-6,
         max_iters: int = 100,
-        filter_only: bool = False,
+        mode: SupervisorMode = SupervisorMode.DEFAULT,
         verbose=False):
         """Initialize the supervisor with the environment and configuration.
 
@@ -36,16 +42,15 @@ class Supervisor:
         :param kl_budget: maximum KL-divergence for the supervisory policy.
         :param tol: tolerance for the KL-divergence estimation.
         :param max_iters: maximum number of iterations for the KL-divergence estimation.
-        :param filter_only: if True, only filter out impermissible actions without augmenting
-            action probabilities over the permissible action space.
+        :param mode: the mode of the supervisor (FILTER_ONLY, MAXIMALLY_SAFE, DEFAULT)
         :param verbose: whether to print debug information
-        """
+        """       
         self.env_unwrapped = env_unwrapped
         self.env_config    = env_config
         self.kl_budget     = kl_budget
         self.tol           = tol
         self.max_iters     = max_iters
-        self.filter_only   = filter_only
+        self.mode          = mode
         self.verbose       = verbose
         self.reset_norms()
 
@@ -172,7 +177,7 @@ class Supervisor:
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         
         # Return early if the supervisor is in filter-only mode
-        if self.filter_only:
+        if self.mode == SupervisorMode.FILTER_ONLY:
             updated_policy = np.zeros_like(model_policy)
             updated_policy[permissible_mask] = model_policy_filtered
             return updated_policy
@@ -216,6 +221,11 @@ class Supervisor:
         """ 
         model_policy = self._get_model_policy(model, obs)
         safe_policy  = self._get_safe_policy()
+
+        # If the supervisor is in maximally safe mode, return the safe policy directly
+        if self.mode == SupervisorMode.MAXIMALLY_SAFE:
+            return safe_policy.argmax()
+
         updated_policy = self._update_policy(model_policy, safe_policy)
         return updated_policy.argmax()
         

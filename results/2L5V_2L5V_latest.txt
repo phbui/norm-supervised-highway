@@ -4,72 +4,98 @@ Environment config: train_30_duration_2_lanes_5_vehicles.json:
 Lanes: 2
 Vehicles: 5
 Duration: 30
-Experiments: 1
+Experiments: 5
 Episodes: 100
 
 WITH SUPERVISOR
-Collisions: 2
-Average collisions: 2.00 (0.00)
-Total unavoided violations: 9.585094913999034
-Average unavoided violations by type: {'Speeding': 2.0610400944607017, 'Tailgating': 5.689754268918085, 'Braking': 0.2371446391258235, 'LaneChangeTailgating': 1.5309307459315176, 'LaneChangeBraking': 0.06622516556291391}
-Average total unavoided violations: 9.59 (0.00) 
+Collisions: 10
+Average collisions: 2.00 (1.67)
+Total unavoided violations: 48.29809225552394
+Average unavoided violations by type: {'Speeding': 1.8508191353979382, 'Tailgating': 6.112179832073197, 'Braking': 0.16266071590463493, 'LaneChangeTailgating': 1.4796541319674312, 'LaneChangeBraking': 0.05430463576158941}
+Average total unavoided violations: 9.66 (0.80) 
 
-Total avoided violations: 121.90401993199438
-Average avoided violations by type: {'Speeding': 45.663184465977004, 'Tailgating': 52.97917124060501, 'Braking': 12.751730450577984, 'LaneChangeTailgating': 7.112582781456954, 'LaneChangeBraking': 3.3973509933774846}
-Average total avoided violations: 121.90 (0.00) 
+Total avoided violations: 589.7105254425003
+Average avoided violations by type: {'Speeding': 45.016950461439144, 'Tailgating': 49.850686399948586, 'Braking': 12.252561017091805, 'LaneChangeTailgating': 7.2603930644858705, 'LaneChangeBraking': 3.5615141455346544}
+Average total avoided violations: 117.94 (3.95) 
 
-Total violations weight: 38.64374946068487
-Average total violations weight: 38.64 (0.00) 
-Average total violations weight by type: {'Speeding': 8.244160377842807, 'Tailgating': 22.75901707567234, 'Braking': 1.185723195629117, 'LaneChangeTailgating': 6.12372298372607, 'LaneChangeBraking': 0.33112582781456956}
+Total violations weight: 194.2771957804269
+Average total violations weight: 38.86 (3.20) 
+Average total violations weight by type: {'Speeding': 7.403276541591753, 'Tailgating': 24.44871932829279, 'Braking': 0.8133035795231743, 'LaneChangeTailgating': 5.918616527869725, 'LaneChangeBraking': 0.271523178807947}
 
-Total violations weight difference: 503.76516117193313
-Average total violations weight difference: 503.77 (0.00) 
-Average total violations weight difference by type: {'Speeding': 182.65273786390802, 'Tailgating': 211.91668496242005, 'Braking': 63.758652252889895, 'LaneChangeTailgating': 28.450331125827816, 'LaneChangeBraking': 16.98675496688742}
+Total violations weight difference: 2437.9124775831333
+Average total violations weight difference: 487.58 (16.69) 
+Average total violations weight difference by type: {'Speeding': 180.06780184575658, 'Tailgating': 199.40274559979434, 'Braking': 61.26280508545902, 'LaneChangeTailgating': 29.041572257943482, 'LaneChangeBraking': 17.807570727673276}
 
-Average TET: 0.2040 (0.0000) seconds
-Average safety score: -4.5691 (0.0000)
+Average TET: 0.2212 (0.0125) seconds
+Average safety score: -5.1335 (0.8904)
+Average speed: 24.7159 (0.1618) m/s
 
 WITH SUPERVISOR FILTER ONLY
-Collisions: 6
-Average collisions: 6.00 (0.00)
-Total unavoided violations: 96.79092193380279
-Average unavoided violations by type: {'Speeding': 41.005819671051455, 'Tailgating': 42.61872728280016, 'Braking': 8.97823817194678, 'LaneChangeTailgating': 3.513239299332015, 'LaneChangeBraking': 0.6748975086723434}
-Average total unavoided violations: 96.79 (0.00) 
+Collisions: 14
+Average collisions: 2.80 (2.48)
+Total unavoided violations: 476.2538292875897
+Average unavoided violations by type: {'Speeding': 40.135975895445505, 'Tailgating': 42.46806670245541, 'Braking': 8.71947261265712, 'LaneChangeTailgating': 3.385726448909356, 'LaneChangeBraking': 0.541524198050537}
+Average total unavoided violations: 95.25 (0.90) 
 
-Total avoided violations: 3.3605398121954413
-Average avoided violations by type: {'Speeding': -0.7464629741119806, 'Tailgating': -2.062699800944835, 'Braking': -0.9982101306604615, 'LaneChangeTailgating': 3.58395635895636, 'LaneChangeBraking': 3.58395635895636}
-Average total avoided violations: 3.36 (0.00) 
+Total avoided violations: 15.427322643824208
+Average avoided violations by type: {'Speeding': -0.7645744691615357, 'Tailgating': -1.694548940510726, 'Braking': -0.7698907878884504, 'LaneChangeTailgating': 3.1572393631627778, 'LaneChangeBraking': 3.1572393631627778}
+Average total avoided violations: 3.09 (0.24) 
 
-Total violations weight: 396.81682341583
-Average total violations weight: 396.82 (0.00) 
-Average total violations weight by type: {'Speeding': 164.02327868420582, 'Tailgating': 170.47490913120063, 'Braking': 44.89119085973391, 'LaneChangeTailgating': 14.05295719732806, 'LaneChangeBraking': 3.3744875433617127}
+Total violations weight: 1951.3203012038969
+Average total violations weight: 390.26 (3.83) 
+Average total violations weight by type: {'Speeding': 160.54390358178202, 'Tailgating': 169.87226680982164, 'Braking': 43.597363063285606, 'LaneChangeTailgating': 13.542905795637424, 'LaneChangeBraking': 2.707620990252683}
 
-Total violations weight difference: 16.027905477077663
-Average total violations weight difference: 16.03 (0.00) 
-Average total violations weight difference by type: {'Speeding': -2.9858518964479224, 'Tailgating': -8.25079920377934, 'Braking': -4.991050653302307, 'LaneChangeTailgating': 14.33582543582544, 'LaneChangeBraking': 17.9197817947818}
+Total violations weight difference: 73.64603345166847
+Average total violations weight difference: 14.73 (1.11) 
+Average total violations weight difference by type: {'Speeding': -3.058297876646143, 'Tailgating': -6.778195762042904, 'Braking': -3.8494539394422502, 'LaneChangeTailgating': 12.628957452651111, 'LaneChangeBraking': 15.786196815813886}
 
-Average TET: 0.6207 (0.0000) seconds
-Average safety score: -16.8155 (0.0000)
+Average TET: 0.6185 (0.0173) seconds
+Average safety score: -17.3231 (0.8129)
+Average speed: 27.0658 (0.2304) m/s
+
+WITH SUPERVISOR MAXIMALLY SAFE
+Collisions: 432
+Average collisions: 86.40 (4.08)
+Total unavoided violations: 0.0
+Average unavoided violations by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
+Average total unavoided violations: 0.00 (0.00) 
+
+Total avoided violations: 702.4796422259512
+Average avoided violations by type: {'Speeding': 37.90836513951351, 'Tailgating': 42.279195910257116, 'Braking': 9.521732767706885, 'LaneChangeTailgating': 36.8749511904691, 'LaneChangeBraking': 13.911683437243614}
+Average total avoided violations: 140.50 (2.57) 
+
+Total violations weight: 0.0
+Average total violations weight: 0.00 (0.00) 
+Average total violations weight by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
+
+Total violations weight difference: 2927.085649928557
+Average total violations weight difference: 585.42 (11.60) 
+Average total violations weight difference by type: {'Speeding': 151.63346055805405, 'Tailgating': 169.11678364102846, 'Braking': 47.608663838534426, 'LaneChangeTailgating': 147.4998047618764, 'LaneChangeBraking': 69.55841718621808}
+
+Average TET: 0.6024 (0.0300) seconds
+Average safety score: -11.9567 (2.2370)
+Average speed: 25.0000 (0.0000) m/s
 
 WITHOUT SUPERVISOR
-Collisions: 25
-Average collisions: 25.00 (0.00)
-Total unavoided violations: 98.70942823410316
-Average unavoided violations by type: {'Speeding': 40.52429190132359, 'Tailgating': 42.772016333765386, 'Braking': 8.973778572819, 'LaneChangeTailgating': 4.1084054564362695, 'LaneChangeBraking': 2.3309359697589014}
-Average total unavoided violations: 98.71 (0.00) 
+Collisions: 121
+Average collisions: 24.20 (2.32)
+Total unavoided violations: 493.06047024853376
+Average unavoided violations by type: {'Speeding': 38.836326556961076, 'Tailgating': 44.02095007978861, 'Braking': 9.622112300640245, 'LaneChangeTailgating': 3.9150175557985376, 'LaneChangeBraking': 2.217687556518274}
+Average total unavoided violations: 98.61 (0.77) 
 
 Total avoided violations: 0.0
 Average avoided violations by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
 Average total avoided violations: 0.00 (0.00) 
 
-Total violations weight: 406.14242747899044
-Average total violations weight: 406.14 (0.00) 
-Average total violations weight by type: {'Speeding': 162.09716760529437, 'Tailgating': 171.08806533506154, 'Braking': 44.868892864095024, 'LaneChangeTailgating': 16.433621825745078, 'LaneChangeBraking': 11.654679848794506}
+Total violations weight: 2031.4408802799267
+Average total violations weight: 406.29 (2.94) 
+Average total violations weight by type: {'Speeding': 155.3453062278443, 'Tailgating': 176.08380031915445, 'Braking': 48.11056150320123, 'LaneChangeTailgating': 15.66007022319415, 'LaneChangeBraking': 11.088437782591367}
 
 Total violations weight difference: 0.0
 Average total violations weight difference: 0.00 (0.00) 
 Average total violations weight difference by type: {'Speeding': 0.0, 'Tailgating': 0.0, 'Braking': 0.0, 'LaneChangeTailgating': 0.0, 'LaneChangeBraking': 0.0}
 
-Average TET: 0.4547 (0.0000) seconds
-Average safety score: -17.0189 (0.0000)
+Average TET: 0.4663 (0.0083) seconds
+Average safety score: -17.7027 (0.7742)
+Average speed: 27.0463 (0.2000) m/s
 

@@ -7,7 +7,7 @@ import os
 
 from stable_baselines3 import DQN
 
-from norm_supervisor.supervisor import Supervisor
+from norm_supervisor.supervisor import Supervisor, SupervisorMode
 import norm_supervisor.norms.norms as norms
 import norm_supervisor.metrics as metrics
 
@@ -77,10 +77,15 @@ def main(env_name = "highway-fast-v0"):
     model = DQN.load(model_path)
     model.set_random_seed(BASE_SEED)
 
-    num_experiments = 1
+    num_experiments = 5
     num_episodes = 100
 
-    results = {"WITH SUPERVISOR": [], "WITH SUPERVISOR FILTER ONLY": [], "WITHOUT SUPERVISOR": []}
+    results = {
+        "WITH SUPERVISOR": [],
+        "WITH SUPERVISOR FILTER ONLY": [],
+        "WITH SUPERVISOR MAXIMALLY SAFE": [],
+        "WITHOUT SUPERVISOR": []
+    }
 
     for mode in results.keys():
         all_collisions = []
@@ -94,6 +99,7 @@ def main(env_name = "highway-fast-v0"):
         all_violations_weight_difference_dict = []
         all_tets = []
         all_safety_scores = []
+        all_speeds = []
 
         for experiment in range(num_experiments):
             experiment_seed = BASE_SEED * (10 ** len(str(abs(num_experiments)))) + experiment
@@ -106,10 +112,16 @@ def main(env_name = "highway-fast-v0"):
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             verbose_supervisor = False # set for verbose output
+            if mode.endswith("FILTER ONLY"):
+                supervisor_mode = SupervisorMode.FILTER_ONLY
+            elif mode.endswith("MAXIMALLY SAFE"):
+                supervisor_mode = SupervisorMode.MAXIMALLY_SAFE
+            else:
+                supervisor_mode = SupervisorMode.DEFAULT
             supervisor = Supervisor(
                 env.unwrapped,
                 env_config,
-                filter_only=mode.endswith("FILTER ONLY"),
+                mode=supervisor_mode,
                 verbose=verbose_supervisor if mode.startswith("WITH SUPERVISOR") else False
             ) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -118,6 +130,7 @@ def main(env_name = "highway-fast-v0"):
             ep_violations_weight_difference_dict = {str(norm): 0 for norm in supervisor.norms}
             ep_tets = []
             ep_safety_scores = []
+            ep_speeds = []
 
             for episode in range(num_episodes):
                 done = truncated = False
@@ -140,6 +153,7 @@ def main(env_name = "highway-fast-v0"):
                 local_violations_weight_difference_dict = {str(norm): 0 for norm in supervisor.norms}
                 local_ttc_history = []
                 local_safety_scores = []
+                local_speed_history = []
                 tstep = 0
                 while not (done or truncated):
                     tstep += 1
@@ -189,6 +203,8 @@ def main(env_name = "highway-fast-v0"):
                     safety_score = metrics.calculate_safety_score(distance, safe_distance)
                     local_safety_scores.append(safety_score)
 
+                    local_speed_history.append(env.unwrapped.vehicle.speed)
+
                     obs, reward, done, truncated, info = env.step(action)
 
                     if done or truncated:
@@ -213,6 +229,7 @@ def main(env_name = "highway-fast-v0"):
                 ep_violations_weight_difference_dict = count_by_presence(ep_violations_weight_difference_dict, local_violations_weight_difference_dict)
                 ep_tets.append(metrics.calculate_tet(local_ttc_history, env_config["simulation_frequency"]))
                 ep_safety_scores.append(np.nanmean(local_safety_scores))
+                ep_speeds.append(np.nanmean(local_speed_history))
 
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). " +
                       f"Episode {episode + 1}/{num_episodes}, " +
@@ -226,7 +243,8 @@ def main(env_name = "highway-fast-v0"):
                       f"Violations Weight across Norms: {str(ep_violations_weight_dict)}, " +
                       f"Violations Weight Differences across Norms: {str(ep_violations_weight_difference_dict)}, " +
                       f"TET: {ep_tets[-1]:.2f} seconds, " +
-                      f"Safety Score: {ep_safety_scores[-1]:.2f}")
+                      f"Safety Score: {ep_safety_scores[-1]:.2f}"
+                      f"Speed: {ep_speeds[-1]:.2f} m/s")
 
                 #env.render()  # Uncomment if you want to render the environment
                 #sleep(1)
@@ -242,6 +260,7 @@ def main(env_name = "highway-fast-v0"):
             all_violations_weight_difference_dict.append(ep_violations_weight_difference_dict)
             all_tets.append(np.nanmean(ep_tets))
             all_safety_scores.append(np.nanmean(ep_safety_scores))
+            all_speeds.append(np.nanmean(ep_speeds))
             print(f"Experiment {experiment + 1}/{num_experiments} finished. " +
                   f"Collision count: {num_collision}, " +
                   f"Unavoided Violatons: {str(all_violations_dict)}, " +
@@ -253,7 +272,8 @@ def main(env_name = "highway-fast-v0"):
                   f"Violations Weight across Norms: {str(all_violations_weight_dict)}, " +
                   f"Violations Weight Differences across Norms: {str(all_violations_weight_difference_dict)}, " +
                   f"Average TET: {np.mean(ep_tets):.4f} seconds, " +
-                  f"Average Safety Score: {np.nanmean(ep_safety_scores):.4f}")
+                  f"Average Safety Score: {np.nanmean(ep_safety_scores):.4f}"
+                  f"Average Speed: {np.nanmean(ep_speeds):.4f} m/s")
 
         env.close()
         results[mode] = [
@@ -267,7 +287,8 @@ def main(env_name = "highway-fast-v0"):
             all_violations_weight_difference,
             all_violations_weight_difference_dict,
             all_tets, 
-            all_safety_scores]
+            all_safety_scores,
+            all_speeds]
         
         print(f"Results for {mode}: Collisions: {all_collisions}, " +
               f"Unavoided Violatons: {str(all_violations_dict)}, " +
@@ -279,7 +300,8 @@ def main(env_name = "highway-fast-v0"):
               f"Violations Weight across Actions: {str(all_violations_weight_dict)}, " +
               f"Violations Weight Differences across Actions: {str(all_violations_weight_difference_dict)}, " +
               f"Average TET: {np.mean(all_tets):.4f} seconds, " +
-              f"Average Safety Score: {np.mean(all_safety_scores):.4f}")
+              f"Average Safety Score: {np.mean(all_safety_scores):.4f}"
+              f"Average Speed: {np.mean(all_speeds):.4f} m/s")
 
     if not os.path.exists(output_file):
         open(output_file, 'w').close()
@@ -312,7 +334,8 @@ def main(env_name = "highway-fast-v0"):
                    violations_weight_difference,
                    violations_weight_difference_dict,
                    tet, 
-                   safety_score] in results.items():
+                   safety_score,
+                   speed] in results.items():
             f.write(f"{mode}\n")
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
@@ -329,7 +352,8 @@ def main(env_name = "highway-fast-v0"):
             f.write(f"Average total violations weight difference: {np.mean(violations_weight_difference):.2f} ({np.std(violations_weight_difference):.2f}) \n")
             f.write(f"Average total violations weight difference by type: {average_by_presence(violations_weight_difference_dict)}\n\n")        
             f.write(f"Average TET: {np.mean(tet):.4f} ({np.std(tet):.4f}) seconds\n")
-            f.write(f"Average safety score: {np.nanmean(safety_score):.4f} ({np.nanstd(safety_score):.4f})\n\n")
+            f.write(f"Average safety score: {np.nanmean(safety_score):.4f} ({np.nanstd(safety_score):.4f})\n")
+            f.write(f"Average speed: {np.nanmean(speed):.4f} ({np.nanstd(speed):.4f}) m/s\n\n")
 
     print(f"Results written to {output_file}")
 
