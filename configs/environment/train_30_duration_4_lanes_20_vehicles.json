@@ -12,7 +12,7 @@
   "collision_reward": -1,
   "reward_speed_range": [20, 30],
   "simulation_frequency": 15,
-  "policy_frequency": 1,
+  "policy_frequency": 5,
   "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
   "screen_width": 600,
   "screen_height": 150,
