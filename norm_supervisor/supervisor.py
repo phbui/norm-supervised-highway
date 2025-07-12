@@ -23,6 +23,11 @@ class SupervisorMode(Enum):
     FILTER_ONLY = "filter_only" # Only filter out impermissible actions
     DEFAULT     = "default"     # Filter and augment the policy to minimize norm violation cost
 
+class SupervisorMethod(Enum):
+    """Enum for supervisor methods."""
+    FIXED    = "fixed"    # Use a fixed beta value
+    ADAPTIVE = "adaptive" # Adaptively calculate beta based on KL budget
+
 class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
     ACTIONS_ALL = DiscreteMetaAction.ACTIONS_ALL
@@ -35,7 +40,9 @@ class Supervisor:
         self,
         env_unwrapped: HighwayEnv,
         env_config: dict,
-        mode: SupervisorMode = SupervisorMode.DEFAULT,
+        mode: str = SupervisorMode.DEFAULT.value,
+        method: str = SupervisorMethod.ADAPTIVE.value,
+        fixed_beta: float = 0.01,
         kl_budget: float = 0.005,
         eta_max: float = 10.0,
         eta_min: float = -10.0,
@@ -46,16 +53,37 @@ class Supervisor:
 
         :param env_unwrapped: the unwrapped HighwayEnv environment.
         :param env_config: the environment configuration.
-        :param mode: the mode of the supervisor (FILTER_ONLY, DEFAULT).
+        :param mode: the mode of the supervisor ('filter_only', 'default').
+        :param method: the method for computing the supervisory policy ('fixed', 'adaptive').
+        :param fixed_beta: fixed beta value for the supervisory policy.
+            This value is only used for the FIXED method.
         :param kl_budget: maximum KL-divergence for the supervisory policy.
+            This value is only used for the ADPATIVE method.
         :param eta_max: maximum value for the KL-divergence hyperparameter (eta=log(beta)).
+            This value is only used for the ADPATIVE method.
         :param eta_min: minimum value for the KL-divergence hyperparameter (eta=log(beta)).
+            This value is only used for the ADPATIVE method.
         :param tol: tolerance for the KL-divergence estimation.
+            This value is only used for the ADPATIVE method.
         :param verbose: whether to print debug information.
+            This value is only used for the ADPATIVE method.
         """       
         self.env_unwrapped = env_unwrapped
         self.env_config    = env_config
-        self.mode          = mode
+
+        try:
+            self.mode = SupervisorMode(mode.lower())
+        except ValueError:
+            raise ValueError(f"Invalid mode: {mode}. Expected one of "
+                             f"{[m.value for m in SupervisorMode]}")
+
+        try:
+            self.method = SupervisorMethod(method.lower())
+        except ValueError:
+            raise ValueError(f"Invalid method: {method}. Expected one of "
+                             f"{[m.value for m in SupervisorMethod]}")
+
+        self.fixed_beta    = fixed_beta
         self.kl_budget     = kl_budget
         self.eta_max       = eta_max
         self.eta_min       = eta_min
@@ -242,17 +270,21 @@ class Supervisor:
                 raise ValueError(f"KL constraint not bracketed: [({self.eta_min}, {kl_gap_high:.4f}), "
                                 f"({self.eta_max}, {kl_gap_low:.4f})]")
 
-            # Solve for eta using root-finding method.
-            eta_results: RootResults = brentq(
-                f=kl_gap,
-                a=self.eta_min,
-                b=self.eta_max,
-                xtol=self.tol,
-                full_output=True
-            )
-            eta_star = eta_results.root
-            if not eta_results.converged:
-                print(f"WARNING: KL-divergence estimation did not converge: {eta_results.flag}")
+            if self.method == SupervisorMethod.FIXED:
+                eta_star = np.log(self.fixed_beta)
+            elif self.method == SupervisorMethod.ADAPTIVE:
+                # Solve for eta using Brent's root-finding algorithm.
+                eta_star, root_results = brentq(
+                    f=kl_gap,
+                    a=self.eta_min,
+                    b=self.eta_max,
+                    xtol=self.tol,
+                    full_output=True
+                )
+                if not root_results.converged:
+                    print(f"WARNING: KL-divergence estimation did not converge: {root_results.flag}")
+            else:
+                raise ValueError(f"Unknown supervisor method: {self.method}")
 
             # Update policy supports.
             updated_policy_supports \

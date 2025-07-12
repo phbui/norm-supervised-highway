@@ -1,0 +1,35 @@
+######## Training run #1 ############
+Model: trained_30_duration_2_lanes_5_vehicles.zip:
+Environment config: train_30_duration_2_lanes_5_vehicles.json:
+Lanes: 2
+Vehicles: 5
+Duration: 30
+Experiments: 5
+Episodes: 100
+KL Budget: 0.004
+
+WITH SUPERVISOR
+Collisions: 8
+Average collisions: 1.60 (0.49)
+Close calls (0.5): 34
+Average close calls: 6.80 (1.33)
+Total unavoided violations: 65.33101484040603
+Average unavoided violations by type: {'Speeding': 2.70144447363761, 'Tailgating': 8.202284632982318, 'Braking': 0.35529696950719913, 'LaneChangeTailgating': 1.7316802032123555, 'LaneChangeBraking': 0.07549668874172186}
+Average total unavoided violations: 13.07 (1.45) 
+
+Total avoided violations: 568.4941358298381
+Average avoided violations by type: {'Speeding': 43.707424327196996, 'Tailgating': 46.89075742654968, 'Braking': 12.938078916560235, 'LaneChangeTailgating': 6.540584736623917, 'LaneChangeBraking': 3.621981759036811}
+Average total avoided violations: 113.70 (2.84) 
+
+Total violations weight: 263.4780276528687
+Average total violations weight: 52.70 (5.80) 
+Average total violations weight by type: {'Speeding': 10.80577789455044, 'Tailgating': 32.80913853192927, 'Braking': 1.7764848475359956, 'LaneChangeTailgating': 6.926720812849422, 'LaneChangeBraking': 0.3774834437086093}
+
+Total violations weight difference: 2356.7768466973375
+Average total violations weight difference: 471.36 (11.92) 
+Average total violations weight difference by type: {'Speeding': 174.82969730878798, 'Tailgating': 187.56302970619873, 'Braking': 64.69039458280118, 'LaneChangeTailgating': 26.16233894649567, 'LaneChangeBraking': 18.10990879518405}
+
+Average TET (3): 0.7641 (0.0136) seconds
+Average safety score: -7.9485 (0.6823)
+Average speed: 25.1726 (0.2138) m/s
+

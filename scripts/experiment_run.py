@@ -1,4 +1,5 @@
 from collections import defaultdict
+import sys
 from time import sleep
 import gymnasium
 import json
@@ -7,7 +8,7 @@ import os
 
 from stable_baselines3 import DQN
 
-from norm_supervisor.supervisor import Supervisor, SupervisorMode
+from norm_supervisor.supervisor import Supervisor, SupervisorMode, SupervisorMethod
 import norm_supervisor.norms.norms as norms
 import norm_supervisor.metrics as metrics
 
@@ -44,7 +45,63 @@ def average_by_presence(dicts):
 
     return {k: sums[k] / counts[k] for k in sums}
 
+def process_args(args: list[str]) -> dict[str, any]:
+    """Process command line arguments to determine the supervisor method and parameters.
+    
+    :param args: List of command line arguments.
+    :return: Dictionary with method, fixed_beta, and kl_budget.
+    """
+    method     = SupervisorMethod.ADAPTIVE.value  # Default method
+    fixed_beta = 0.01        # Default fixed beta value
+    kl_budget  = 0.001       # Default KL budget
+
+    if len(args) == 1:
+        return {
+            "method": "baseline",
+            "fixed_beta": fixed_beta,
+            "kl_budget": kl_budget
+        }
+
+    if len(args) > 1:
+        cmd_method = args[1].lower()
+        if cmd_method not in [m.value for m in SupervisorMethod]:
+            print(f"Invalid method argument: {cmd_method}. Using default method: {method}.")
+        else:
+            method = cmd_method
+            print(f"Using method: {method}")
+
+    if len(args) > 2:
+        cmd_value = args[2]
+        try:
+            value = float(cmd_value)
+            if method == SupervisorMethod.FIXED.value:
+                fixed_beta = value
+                print(f"Using fixed beta value: {fixed_beta}")
+            elif method == SupervisorMethod.ADAPTIVE.value:
+                kl_budget = value
+                print(f"Using KL budget: {kl_budget}")
+            else:
+                print(f"Unknown method: {method}. Using default values.")
+        except ValueError:
+            print(f"Invalid value argument: {cmd_value}. Using default value.")
+
+    return {
+        "method": method,
+        "fixed_beta": fixed_beta,
+        "kl_budget": kl_budget
+    }
+
 def main(env_name = "highway-fast-v0"):
+    """Main function to run the experiment with the selected model and environment configuration.
+    
+    Example usage:
+        python experiment_run.py                  # Run baseline methods
+        python experiment_run.py adaptive 0.001   # Run supervisor with adaptive beta
+        python experiment_run.py fixed 0.01       # Run supervisor with fixed beta
+    """
+    # Process command line arguments
+    args = process_args(sys.argv)
+
     # Select model
     model_files = list_models()
     if not model_files:
@@ -80,14 +137,19 @@ def main(env_name = "highway-fast-v0"):
     num_experiments = 5
     num_episodes = 100
 
-    results = {
-        "WITH SUPERVISOR": [],
-        "WITH SUPERVISOR FILTER ONLY": [],
-        "WITHOUT SUPERVISOR": []
-    }
+    if args['method'] == "baseline":
+        results = {
+            "WITH SUPERVISOR FILTER ONLY": [],
+            "WITHOUT SUPERVISOR": []
+        }
+    else:
+        results = {
+            "WITH SUPERVISOR": []
+        }
 
     for mode in results.keys():
         all_collisions = []
+        all_close_calls = []
         all_violations = []
         all_avoided_violations = []
         all_violations_dict = []
@@ -104,6 +166,7 @@ def main(env_name = "highway-fast-v0"):
             experiment_seed = BASE_SEED * (10 ** len(str(abs(num_experiments)))) + experiment
             print(f"\nExperiment {experiment + 1}/{num_experiments} ({mode}).")
             num_collision = 0
+            num_close_calls = 0
             num_violations = 0
             num_violations_weight = 0
             num_avoided_violations = 0
@@ -111,12 +174,15 @@ def main(env_name = "highway-fast-v0"):
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             verbose_supervisor = False # set for verbose output
-            supervisor_mode = (SupervisorMode.FILTER_ONLY if mode.endswith("FILTER ONLY")
-                               else SupervisorMode.DEFAULT)
+            supervisor_mode = (SupervisorMode.FILTER_ONLY.value if mode.endswith("FILTER ONLY")
+                               else SupervisorMode.DEFAULT.value)
             supervisor = Supervisor(
                 env.unwrapped,
                 env_config,
                 mode=supervisor_mode,
+                method=args['method'],
+                fixed_beta=args['fixed_beta'],
+                kl_budget=args['kl_budget'],
                 verbose=verbose_supervisor if mode.startswith("WITH SUPERVISOR") else False
             ) 
             ep_violations_dict = {str(norm): 0 for norm in supervisor.norms}
@@ -193,6 +259,10 @@ def main(env_name = "highway-fast-v0"):
                     ttcs = metrics.calculate_neighbour_ttcs(env.unwrapped.vehicle)
                     local_ttc_history.append(ttcs[0])
 
+                    # Count number of time steps spent within the collision threshold
+                    if any(ttc < Supervisor.COLLISION_THRESHOLD for ttc in ttcs):
+                        num_close_calls += 1
+
                     distance = tailgating_norm.evaluate_criterion(env.unwrapped.vehicle)
                     safe_distance = metrics.calculate_safe_distance(env.unwrapped.vehicle.speed, env.unwrapped.action_type, env_config["simulation_frequency"])
                     safety_score = metrics.calculate_safety_score(distance, safe_distance)
@@ -222,13 +292,14 @@ def main(env_name = "highway-fast-v0"):
                 ep_avoided_violations_dict           = count_by_presence(ep_avoided_violations_dict, local_avoided_violations_dict)
                 ep_violations_weight_dict            = count_by_presence(ep_violations_weight_dict, local_violations_weight_dict)
                 ep_violations_weight_difference_dict = count_by_presence(ep_violations_weight_difference_dict, local_violations_weight_difference_dict)
-                ep_tets.append(metrics.calculate_tet(local_ttc_history, env_config["simulation_frequency"]))
+                ep_tets.append(metrics.calculate_tet(local_ttc_history, env_config["simulation_frequency"], Supervisor.BRAKING_THRESHOLD))
                 ep_safety_scores.append(np.nanmean(local_safety_scores))
                 ep_speeds.append(np.nanmean(local_speed_history))
 
                 print(f"\nExperiment {experiment +1}/{num_experiments} ({mode}). " +
                       f"Episode {episode + 1}/{num_episodes}, " +
                       f"Collision: {num_collision}, " +
+                      f"Close Calls: {num_close_calls}, " +
                       f"Unavoided Violatons: {str(ep_violations_dict)}, " +
                       f"Number of Violations: {num_violations}, " +
                       f"Avoided Violations: {str(ep_avoided_violations_dict)}, " +
@@ -238,13 +309,14 @@ def main(env_name = "highway-fast-v0"):
                       f"Violations Weight across Norms: {str(ep_violations_weight_dict)}, " +
                       f"Violations Weight Differences across Norms: {str(ep_violations_weight_difference_dict)}, " +
                       f"TET: {ep_tets[-1]:.2f} seconds, " +
-                      f"Safety Score: {ep_safety_scores[-1]:.2f}"
+                      f"Safety Score: {ep_safety_scores[-1]:.2f}, "
                       f"Speed: {ep_speeds[-1]:.2f} m/s")
 
                 #env.render()  # Uncomment if you want to render the environment
                 #sleep(1)
 
             all_collisions.append(num_collision)
+            all_close_calls.append(num_close_calls)
             all_violations.append(num_violations)
             all_avoided_violations.append(num_avoided_violations)
             all_violations_dict.append(ep_violations_dict)
@@ -258,6 +330,7 @@ def main(env_name = "highway-fast-v0"):
             all_speeds.append(np.nanmean(ep_speeds))
             print(f"Experiment {experiment + 1}/{num_experiments} finished. " +
                   f"Collision count: {num_collision}, " +
+                  f"Close Calls: {num_close_calls}, " +
                   f"Unavoided Violatons: {str(all_violations_dict)}, " +
                   f"Total Unavoided: {num_violations}, " +
                   f"Avoided Violations:{str(all_avoided_violations_dict)}, " +
@@ -267,12 +340,13 @@ def main(env_name = "highway-fast-v0"):
                   f"Violations Weight across Norms: {str(all_violations_weight_dict)}, " +
                   f"Violations Weight Differences across Norms: {str(all_violations_weight_difference_dict)}, " +
                   f"Average TET: {np.mean(ep_tets):.4f} seconds, " +
-                  f"Average Safety Score: {np.nanmean(ep_safety_scores):.4f}"
+                  f"Average Safety Score: {np.nanmean(ep_safety_scores):.4f}, "
                   f"Average Speed: {np.nanmean(ep_speeds):.4f} m/s")
 
         env.close()
         results[mode] = [
             all_collisions, 
+            all_close_calls,
             all_violations, 
             all_avoided_violations, 
             all_violations_dict, 
@@ -286,6 +360,7 @@ def main(env_name = "highway-fast-v0"):
             all_speeds]
         
         print(f"Results for {mode}: Collisions: {all_collisions}, " +
+              f"Close Calls: {all_close_calls}, " +
               f"Unavoided Violatons: {str(all_violations_dict)}, " +
               f"Total Unavoided: {num_violations}, " +
               f"Avoided Violations: {str(all_avoided_violations_dict)}, " +
@@ -295,7 +370,7 @@ def main(env_name = "highway-fast-v0"):
               f"Violations Weight across Actions: {str(all_violations_weight_dict)}, " +
               f"Violations Weight Differences across Actions: {str(all_violations_weight_difference_dict)}, " +
               f"Average TET: {np.mean(all_tets):.4f} seconds, " +
-              f"Average Safety Score: {np.mean(all_safety_scores):.4f}"
+              f"Average Safety Score: {np.mean(all_safety_scores):.4f}, "
               f"Average Speed: {np.mean(all_speeds):.4f} m/s")
 
     if not os.path.exists(output_file):
@@ -317,9 +392,16 @@ def main(env_name = "highway-fast-v0"):
         f.write(f"Vehicles: {env_config['vehicles_count']}\n")
         f.write(f"Duration: {env_config['duration']}\n")
         f.write(f"Experiments: {num_experiments}\n")
-        f.write(f"Episodes: {num_episodes}\n\n")
+        f.write(f"Episodes: {num_episodes}\n")
+        if "WITH SUPERVISOR" in results:
+            f.write(f"Method: {args['method']}\n")
+            f.write(f"Fixed Beta: {args['fixed_beta']}\n")
+            f.write(f"KL Budget: {args['kl_budget']}\n\n")
+        else:
+            f.write("\n")
 
-        for mode, [collisions, 
+        for mode, [collisions,
+                   close_calls,
                    violations, 
                    avoided_violations, 
                    violations_dict, 
@@ -334,6 +416,8 @@ def main(env_name = "highway-fast-v0"):
             f.write(f"{mode}\n")
             f.write(f"Collisions: {sum(collisions)}\n")
             f.write(f"Average collisions: {np.mean(collisions):.2f} ({np.std(collisions):.2f})\n")
+            f.write(f"Close calls ({Supervisor.COLLISION_THRESHOLD}): {sum(close_calls)}\n")
+            f.write(f"Average close calls: {np.mean(close_calls):.2f} ({np.std(close_calls):.2f})\n")
             f.write(f"Total unavoided violations: {sum(violations)}\n")
             f.write(f"Average unavoided violations by type: {average_by_presence(violations_dict)}\n")
             f.write(f"Average total unavoided violations: {np.mean(violations):.2f} ({np.std(violations):.2f}) \n\n")
@@ -346,7 +430,7 @@ def main(env_name = "highway-fast-v0"):
             f.write(f"Total violations weight difference: {sum(violations_weight_difference)}\n")
             f.write(f"Average total violations weight difference: {np.mean(violations_weight_difference):.2f} ({np.std(violations_weight_difference):.2f}) \n")
             f.write(f"Average total violations weight difference by type: {average_by_presence(violations_weight_difference_dict)}\n\n")        
-            f.write(f"Average TET: {np.mean(tet):.4f} ({np.std(tet):.4f}) seconds\n")
+            f.write(f"Average TET ({Supervisor.BRAKING_THRESHOLD}): {np.mean(tet):.4f} ({np.std(tet):.4f}) seconds\n")
             f.write(f"Average safety score: {np.nanmean(safety_score):.4f} ({np.nanstd(safety_score):.4f})\n")
             f.write(f"Average speed: {np.nanmean(speed):.4f} ({np.nanstd(speed):.4f}) m/s\n\n")
 
