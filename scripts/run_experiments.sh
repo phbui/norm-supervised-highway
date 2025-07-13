@@ -11,10 +11,10 @@ label() {
 
 # Format: method value model config
 experiments=(
-    "fixed    0.3    0 0"
-    "fixed    1      0 0"
-    "fixed    3      0 0"
-    "fixed    10     0 0"
+    "adaptive 0.100 0 1"
+    "fixed      100 1 0"
+    "fixed      50  1 1"
+    "fixed     100  1 1"
 )
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

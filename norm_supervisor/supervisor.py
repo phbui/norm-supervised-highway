@@ -1,5 +1,5 @@
 from enum import Enum
-from scipy.optimize import brentq, RootResults
+from scipy.optimize import brentq
 from scipy.stats import entropy
 import numpy as np
 import numpy.typing as npt
@@ -20,8 +20,9 @@ FloatArray1D = npt.NDArray[np.float64]
 
 class SupervisorMode(Enum):
     """Enum for supervisor modes."""
-    FILTER_ONLY = "filter_only" # Only filter out impermissible actions
-    DEFAULT     = "default"     # Filter and augment the policy to minimize norm violation cost
+    FILTER_ONLY   = "filter_only"   # Only filter out impermissible actions
+    NAIVE_AUGMENT = "naive_augment" # Use naive update rule to augment the policy
+    DEFAULT       = "default"       # Filter and augment the policy to minimize norm violation cost
 
 class SupervisorMethod(Enum):
     """Enum for supervisor methods."""
@@ -53,7 +54,7 @@ class Supervisor:
 
         :param env_unwrapped: the unwrapped HighwayEnv environment.
         :param env_config: the environment configuration.
-        :param mode: the mode of the supervisor ('filter_only', 'default').
+        :param mode: the mode of the supervisor ('filter_only', 'naive_augment', 'default').
         :param method: the method for computing the supervisory policy ('fixed', 'adaptive').
         :param fixed_beta: fixed beta value for the supervisory policy.
             This value is only used for the FIXED method.
@@ -301,6 +302,21 @@ class Supervisor:
             for action, prob in enumerate(updated_policy):
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         return updated_policy
+    
+    def _augment_policy_naive(self, policy: FloatArray1D) -> FloatArray1D:
+        """Naively augment the given policy to minimize the expected norm violation cost.
+        
+        This method simply multiplies the policy by 1/(1 + cost) to bias probabilities towards
+        norm-compliant actions. It does not enforce any constraint on the KL-divergence.
+        """
+        cost = self.get_norm_violation_cost()
+        updated_policy = policy * (1.0 / (1.0 + cost))
+        updated_policy /= np.sum(updated_policy)
+        if self.verbose:
+            print("Naively Augmented Policy:")
+            for action, prob in enumerate(updated_policy):
+                print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
+        return updated_policy
 
     def decide_action(self, model: DQN, obs: Observation) -> Action:
         """Decide which action the agent should take based on the updated policy.
@@ -318,7 +334,10 @@ class Supervisor:
         policy_filtered = self._filter_policy(model_policy)
         if self.mode == SupervisorMode.FILTER_ONLY:
             return policy_filtered.argmax()
-        augmented_policy = self._augment_policy(policy_filtered)
+        if self.mode == SupervisorMode.NAIVE_AUGMENT:
+            augmented_policy = self._augment_policy_naive(policy_filtered)
+        else: # SupervisorMode.DEFAULT
+            augmented_policy = self._augment_policy(policy_filtered)
         return augmented_policy.argmax()
         
     @staticmethod

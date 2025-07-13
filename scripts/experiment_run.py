@@ -56,19 +56,11 @@ def process_args(args: list[str]) -> dict[str, any]:
     kl_budget  = 0.001       # Default KL budget
 
     if len(args) == 1:
-        return {
-            "method": "baseline",
-            "fixed_beta": fixed_beta,
-            "kl_budget": kl_budget
-        }
+        method = "baseline"
 
     if len(args) > 1:
-        cmd_method = args[1].lower()
-        if cmd_method not in [m.value for m in SupervisorMethod]:
-            print(f"Invalid method argument: {cmd_method}. Using default method: {method}.")
-        else:
-            method = cmd_method
-            print(f"Using method: {method}")
+        method = args[1].lower()
+        print(f"Using method: {method}")
 
     if len(args) > 2:
         cmd_value = args[2]
@@ -139,8 +131,9 @@ def main(env_name = "highway-fast-v0"):
 
     if args['method'] == "baseline":
         results = {
-            "WITH SUPERVISOR FILTER ONLY": [],
-            "WITHOUT SUPERVISOR": []
+            "WITH SUPERVISOR NAIVE AUGMENT": [],
+            #"WITH SUPERVISOR FILTER ONLY": [],
+            #"WITHOUT SUPERVISOR": []
         }
     else:
         results = {
@@ -173,14 +166,18 @@ def main(env_name = "highway-fast-v0"):
             num_violations_weight_difference = 0
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
+            if mode == "WITH SUPERVISOR NAIVE AUGMENT":
+                supervisor_mode = SupervisorMode.NAIVE_AUGMENT.value
+            elif mode == "WITH SUPERVISOR FILTER ONLY":
+                supervisor_mode = SupervisorMode.FILTER_ONLY.value
+            else:
+                supervisor_mode = SupervisorMode.DEFAULT.value
             verbose_supervisor = False # set for verbose output
-            supervisor_mode = (SupervisorMode.FILTER_ONLY.value if mode.endswith("FILTER ONLY")
-                               else SupervisorMode.DEFAULT.value)
             supervisor = Supervisor(
                 env.unwrapped,
                 env_config,
                 mode=supervisor_mode,
-                method=args['method'],
+                method=args['method'] if args['method'] != "baseline" else "adaptive", # Never used
                 fixed_beta=args['fixed_beta'],
                 kl_budget=args['kl_budget'],
                 verbose=verbose_supervisor if mode.startswith("WITH SUPERVISOR") else False
@@ -395,8 +392,8 @@ def main(env_name = "highway-fast-v0"):
         f.write(f"Episodes: {num_episodes}\n")
         if "WITH SUPERVISOR" in results:
             f.write(f"Method: {args['method']}\n")
-            f.write(f"Fixed Beta: {args['fixed_beta']}\n")
-            f.write(f"KL Budget: {args['kl_budget']}\n\n")
+            f.write(f"Fixed Beta: {args['fixed_beta'] if args['method'] == SupervisorMethod.FIXED.value else "N/A"}\n")
+            f.write(f"KL Budget: {args['kl_budget'] if args['method'] == SupervisorMethod.ADAPTIVE.value else "N/A"}\n\n")
         else:
             f.write("\n")
 

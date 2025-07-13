@@ -7,6 +7,31 @@ Duration: 30
 Experiments: 5
 Episodes: 100
 
+WITH SUPERVISOR NAIVE AUGMENT
+Collisions: 53
+Average collisions: 10.60 (2.42)
+Close calls (0.5): 142
+Average close calls: 28.40 (4.76)
+Total unavoided violations: 2.2369816318911586
+Average unavoided violations by type: {'Speeding': 0.0, 'Tailgating': 0.20303866484303987, 'Braking': 0.0, 'LaneChangeTailgating': 0.22445407095988895, 'LaneChangeBraking': 0.019903590575302967}
+Average total unavoided violations: 0.45 (0.11) 
+
+Total avoided violations: 367.0591970660179
+Average avoided violations by type: {'Speeding': 18.28164378830914, 'Tailgating': 25.664132527563105, 'Braking': 2.9419921234342676, 'LaneChangeTailgating': 17.441637066519686, 'LaneChangeBraking': 9.082433907377357}
+Average total avoided violations: 73.41 (5.19) 
+
+Total violations weight: 9.047444480441149
+Average total violations weight: 1.81 (0.44) 
+Average total violations weight by type: {'Speeding': 0.0, 'Tailgating': 0.8121546593721595, 'Braking': 0.0, 'LaneChangeTailgating': 0.8978162838395558, 'LaneChangeBraking': 0.09951795287651485}
+
+Total violations weight difference: 1528.3589184181296
+Average total violations weight difference: 305.67 (21.62) 
+Average total violations weight difference by type: {'Speeding': 73.12657515323656, 'Tailgating': 102.65653011025242, 'Braking': 14.709960617171342, 'LaneChangeTailgating': 69.76654826607874, 'LaneChangeBraking': 45.41216953688679}
+
+Average TET (3): 0.1657 (0.0241) seconds
+Average safety score: 28.3743 (1.6490)
+Average speed: 22.4189 (0.1392) m/s
+
 WITH SUPERVISOR FILTER ONLY
 Collisions: 167
 Average collisions: 33.40 (2.15)

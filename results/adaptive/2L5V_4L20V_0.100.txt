@@ -7,7 +7,7 @@ Duration: 30
 Experiments: 5
 Episodes: 100
 Method: adaptive
-Fixed Beta: 0.01
+Fixed Beta: N/A
 KL Budget: 0.1
 
 WITH SUPERVISOR

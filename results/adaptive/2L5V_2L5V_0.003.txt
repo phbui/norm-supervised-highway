@@ -6,6 +6,8 @@ Vehicles: 5
 Duration: 30
 Experiments: 5
 Episodes: 100
+Method: adaptive
+Fixed Beta: NA
 KL Budget: 0.003
 
 WITH SUPERVISOR
