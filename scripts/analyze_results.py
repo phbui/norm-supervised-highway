@@ -286,7 +286,7 @@ def generate_markdown_tables(grouped_data):
                         if metric == 'km_per_collision':
                             # Compute km per collision for each experiment, then mean and std
                             km_per_collision_list = []
-                            simulation_period = 1/15 # TODO: Use environment config
+                            policy_period = 1/5 # TODO: Use environment config
                             for df in group_data:
                                 if 'collision_count' in df.columns and 'mean_speed' in df.columns and 'episode_length_mean' in df.columns and 'num_episodes' in df.columns:
                                     for idx, row in df.iterrows():
@@ -295,7 +295,7 @@ def generate_markdown_tables(grouped_data):
                                         ep_length = row.get('episode_length_mean', np.nan)
                                         num_episodes = row.get('num_episodes', np.nan)
                                         if not np.isnan(speed) and not np.isnan(ep_length) and not np.isnan(num_episodes) and collisions > 0:
-                                            distance = speed * ep_length * simulation_period * num_episodes
+                                            distance = speed * ep_length * policy_period * num_episodes
                                             km_per_collision = (distance / collisions) / 1000
                                             km_per_collision_list.append(km_per_collision)
                             if km_per_collision_list:
