@@ -13,7 +13,12 @@ class AbstractNorm(ABC):
         :param weight: the norm weight, used for prioritization.
         :param violating_actions: list of potentially norm-violating actions.
         """
-        self.weight            = weight
+        if weight is not None and weight < 0:
+            raise ValueError("Norm weight must be non-negative.")
+        if not violating_actions:
+            raise ValueError("Norm must have at least one violating action.")
+
+        self.weight = weight
         self.violating_actions = violating_actions
 
     @abstractmethod
@@ -26,27 +31,17 @@ class AbstractNorm(ABC):
         pass
 
     @abstractmethod
-    def is_violating_state(self, vehicle: Vehicle, *args, **kwargs) -> bool:
-        """Check if the current state of the vehicle violates the norm.
-        
-        :param vehicle: the vehicle to check.
-        :return: True if the norm is violated, False otherwise.
-        """
-        pass
-
-    def is_violating_action(self, action: Action, vehicle: Vehicle, *args, **kwargs) -> bool:
+    def is_violating_action(self, vehicle: Vehicle, action: Action, *args, **kwargs) -> bool:
         """Check if the provided action violates the norm in the vehicle's current state.
 
         If the current state already violates this norm and the action reduces the severity of the 
         violation, the action is not considered norm-violating.
         
-        :param action: the action to check.
         :param vehicle: the vehicle to check.
+        :param action: the action to check.
         :return: True if the provided action is norm-violating, False otherwise.
         """
-        if action not in self.violating_actions:
-            return False
-        return self.is_violating_state(vehicle, *args, **kwargs)
+        pass
     
     def __str__(self):
         """To string function."""
