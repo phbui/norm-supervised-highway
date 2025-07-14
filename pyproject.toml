@@ -22,4 +22,5 @@ dependencies = [
   "scipy>=1.10.0",
   "stable-baselines3>=2.6.0",
   "torch>=2.7.1",
+  "matplotlib>=3.10.1"
 ]

@@ -5,37 +5,35 @@ NUM_EXPERIMENTS=5
 NUM_EPISODES=100
 
 # Set to true to overwrite existing results
-FORCE_WRITE=false
+FORCE_WRITE=true
 
 experiments=(
     # BASELINES
     # <profile>  <mode>         <method>  <value>  <model>  <env>
-    " cautious   unsupervised   nan           nan  2L5V     2L5V "
-    " cautious   filter_only    nan           nan  2L5V     2L5V "
+    #" cautious   unsupervised   nan           nan  2L5V     2L5V "
+    #" cautious   filter_only    nan           nan  2L5V     2L5V "
     " cautious   naive_augment  nan           nan  2L5V     2L5V "
-    " efficient  unsupervised   nan           nan  2L5V     2L5V "
-    " efficient  filter_only    nan           nan  2L5V     2L5V "
+    #" efficient  unsupervised   nan           nan  2L5V     2L5V "
+    #" efficient  filter_only    nan           nan  2L5V     2L5V "
     " efficient  naive_augment  nan           nan  2L5V     2L5V "
 
     # ADAPTIVE
     # <profile>  <mode>         <method>  <value>  <model>  <env>
-    " cautious   default        adaptive    0.001  2L5V     2L5V "
-    " cautious   default        adaptive    0.003  2L5V     2L5V "
-    " cautious   default        adaptive    0.010  2L5V     2L5V "
-    " efficient  default        adaptive    0.001  2L5V     2L5V "
-    " efficient  default        adaptive    0.003  2L5V     2L5V "
-    " efficient  default        adaptive    0.010  2L5V     2L5V "
+    #" cautious   default        adaptive    0.001  2L5V     2L5V "
+    #" cautious   default        adaptive    0.003  2L5V     2L5V "
+    #" cautious   default        adaptive    0.010  2L5V     2L5V "
+    #" efficient  default        adaptive    0.001  2L5V     2L5V "
+    #" efficient  default        adaptive    0.003  2L5V     2L5V "
+    #" efficient  default        adaptive    0.010  2L5V     2L5V "
 
     # FIXED
     # <profile>  <mode>         <method>  <value>  <model>  <env>
-    " cautious   default        fixed           1  2L5V     2L5V "
-    " cautious   default        fixed           3  2L5V     2L5V "
-    " cautious   default        fixed          10  2L5V     2L5V "
-    " cautious   default        fixed          30  2L5V     2L5V "
-    " efficient  default        fixed           1  2L5V     2L5V "
-    " efficient  default        fixed           3  2L5V     2L5V "
-    " efficient  default        fixed          10  2L5V     2L5V "
-    " efficient  default        fixed          30  2L5V     2L5V "
+    #" cautious   default        fixed           1  2L5V     2L5V "
+    #" cautious   default        fixed           3  2L5V     2L5V "
+    #" cautious   default        fixed          10  2L5V     2L5V "
+    #" efficient  default        fixed           1  2L5V     2L5V "
+    #" efficient  default        fixed           3  2L5V     2L5V "
+    #" efficient  default        fixed          10  2L5V     2L5V "
 )
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

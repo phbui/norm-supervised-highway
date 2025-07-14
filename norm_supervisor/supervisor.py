@@ -318,7 +318,8 @@ class Supervisor:
         norm-compliant actions. It does not enforce any constraint on the KL-divergence.
         """
         cost = self.get_norm_violation_cost()
-        updated_policy = policy * (1.0 / (1.0 + cost))
+        normalized_cost = cost / np.sum(cost)
+        updated_policy = policy * (1.0 / (1.0 + normalized_cost))
         updated_policy /= np.sum(updated_policy)
         if self.verbose:
             print("Naively Augmented Policy:")
