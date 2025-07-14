@@ -13,6 +13,11 @@ class AbstractNorm(ABC):
         :param weight: the norm weight, used for prioritization.
         :param violating_actions: list of potentially norm-violating actions.
         """
+        if weight is not None and weight < 0:
+            raise ValueError("Norm weight must be non-negative.")
+        if not violating_actions:
+            raise ValueError("Norm must have at least one violating action.")
+
         self.weight = weight
         self.violating_actions = violating_actions
 
