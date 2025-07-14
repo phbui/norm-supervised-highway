@@ -163,25 +163,41 @@ def generate_markdown_tables(grouped_data):
     """Generate markdown tables from grouped data, one per model-environment combination."""
     
     # Define metric categories and their display names
-    metric_categories = {
+    summary_metric_categories = {
         'Episode Metrics': ['episode_length_mean', 'collision_count'],
         'Safety Metrics': ['mean_ttc', 'mean_following_distance', 'mean_speed'],
+        'Cost Metrics': ['cost_rate_mean', 'avoided_cost_rate_mean'],
+        'Lane Usage': []  # Will be populated dynamically
+    }
+    
+    details_metric_categories = {
         'Violation Rates': [
             'speed_violations_rate_mean', 'tailgating_violations_rate_mean',
             'braking_violations_rate_mean', 'lane_change_tailgating_violations_rate_mean',
             'lane_change_braking_violations_rate_mean', 'collision_violations_rate_mean',
             'lane_change_collision_violations_rate_mean'
         ],
-        'Cost Metrics': ['cost_rate_mean', 'avoided_cost_rate_mean'],
-        'Lane Usage': []  # Will be populated dynamically
+        'Cost Metrics': ['cost_rate_mean', 'avoided_cost_rate_mean']
     }
     
     # Create display names mapping (replace underscores with spaces and remove "mean")
     display_names = {}
-    for category, metrics in metric_categories.items():
+    for category, metrics in summary_metric_categories.items():
         for metric in metrics:
             display_name = metric.replace('_', ' ')
-            # Remove "mean" from the end
+            # Remove "mean" from the beginning or end
+            if display_name.startswith('mean '):
+                display_name = display_name[5:]
+            if display_name.endswith(' mean'):
+                display_name = display_name[:-5]  # Remove " mean"
+            display_names[metric] = display_name
+    
+    for category, metrics in details_metric_categories.items():
+        for metric in metrics:
+            display_name = metric.replace('_', ' ')
+            # Remove "mean" from the beginning or end
+            if display_name.startswith('mean '):
+                display_name = display_name[5:]
             if display_name.endswith(' mean'):
                 display_name = display_name[:-5]  # Remove " mean"
             display_names[metric] = display_name
@@ -193,7 +209,7 @@ def generate_markdown_tables(grouped_data):
         lane_cols = get_lane_columns(stats)
         all_lane_cols.update(lane_cols)
     
-    metric_categories['Lane Usage'] = sorted(all_lane_cols)
+    summary_metric_categories['Lane Usage'] = sorted(all_lane_cols)
     for lane_col in all_lane_cols:
         display_name = lane_col.replace('_', ' ')
         # Remove "mean" from the end
@@ -201,10 +217,14 @@ def generate_markdown_tables(grouped_data):
             display_name = display_name[:-5]  # Remove " mean"
         display_names[lane_col] = display_name
 
-    # Build header row
-    header_cols = ['Method']
-    for category, metrics in metric_categories.items():
-        header_cols.extend([display_names.get(metric, metric) for metric in metrics])
+    # Build header rows
+    summary_header_cols = ['method']
+    for category, metrics in summary_metric_categories.items():
+        summary_header_cols.extend([display_names.get(metric, metric) for metric in metrics])
+    
+    details_header_cols = ['method']
+    for category, metrics in details_metric_categories.items():
+        details_header_cols.extend([display_names.get(metric, metric) for metric in metrics])
     
     # Group data by model-environment combination first, then by profile
     model_env_groups = defaultdict(lambda: defaultdict(dict))
@@ -214,20 +234,26 @@ def generate_markdown_tables(grouped_data):
         profile = config_dict['profile']
         model_env_groups[model_env_key][profile][config_tuple] = group_data
     
-    tables = []
+    summary_tables = []
+    details_tables = []
+    
     for (model, env), profile_configs in sorted(model_env_groups.items()):
         # Build table rows for this model-environment combination
-        rows = []
+        summary_rows = []
+        details_rows = []
         
         for profile, configs in sorted(profile_configs.items()):
             # Add separator row if not the first profile
-            if rows:  # Add empty row before new section
-                rows.append([''] * len(header_cols))
+            if summary_rows:  # Add empty row before new section
+                summary_rows.append([''] * len(summary_header_cols))
+                details_rows.append([''] * len(details_header_cols))
             
             # Add section header
             section_header = f"**{profile.title()} Profile**"
-            separator_row = [section_header] + [''] * (len(header_cols) - 1)
-            rows.append(separator_row)
+            summary_separator_row = [section_header] + [''] * (len(summary_header_cols) - 1)
+            details_separator_row = [section_header] + [''] * (len(details_header_cols) - 1)
+            summary_rows.append(summary_separator_row)
+            details_rows.append(details_separator_row)
             
             for config_tuple, group_data in sorted(configs.items()):
                 config_dict = dict(config_tuple)
@@ -239,26 +265,44 @@ def generate_markdown_tables(grouped_data):
                 else:
                     config_name = f"{config_dict['method'].title()}"
                 
-                # Build data row
-                row = [config_name]
-                for category, metrics in metric_categories.items():
+                # Build summary data row
+                summary_row = [config_name]
+                for category, metrics in summary_metric_categories.items():
                     for metric in metrics:
                         if metric in stats:
                             mean_val, std_val = stats[metric]
-                            row.append(format_statistic(mean_val, std_val, metric))
+                            summary_row.append(format_statistic(mean_val, std_val, metric))
                         else:
-                            row.append("-")
+                            summary_row.append("-")
                 
-                rows.append(row)
+                # Build details data row
+                details_row = [config_name]
+                for category, metrics in details_metric_categories.items():
+                    for metric in metrics:
+                        if metric in stats:
+                            mean_val, std_val = stats[metric]
+                            details_row.append(format_statistic(mean_val, std_val, metric))
+                        else:
+                            details_row.append("-")
+                
+                summary_rows.append(summary_row)
+                details_rows.append(details_row)
         
-        tables.append({
+        summary_tables.append({
             'model': model,
             'env': env,
-            'header_cols': header_cols,
-            'rows': rows
+            'header_cols': summary_header_cols,
+            'rows': summary_rows
+        })
+        
+        details_tables.append({
+            'model': model,
+            'env': env,
+            'header_cols': details_header_cols,
+            'rows': details_rows
         })
     
-    return tables
+    return summary_tables, details_tables
 
 
 def generate_summary_table(grouped_data):
@@ -340,44 +384,72 @@ def main():
     
     # Generate markdown tables
     print("Generating markdown tables...")
-    tables = generate_markdown_tables(grouped_data)
+    summary_tables, details_tables = generate_markdown_tables(grouped_data)
     
     # Generate summary table
     print("Generating summary table...")
     summary_rows = generate_summary_table(grouped_data)
     
-    # Write output (will overwrite existing file)
-    output_file = os.path.join(args.output_dir, 'summary.md')
+    # Write summary.md (without violation rates)
+    summary_file = os.path.join(args.output_dir, 'summary.md')
     
     # Write overview (overwrites any existing file)
-    with open(output_file, 'w') as f:
+    with open(summary_file, 'w') as f:
         f.write("# Experiment Results Summary\n")
     
-    # Write each table
-    for table_data in tables:
+    # Write each summary table
+    for table_data in summary_tables:
         model = table_data['model']
         env = table_data['env']
         header_cols = table_data['header_cols']
         rows = table_data['rows']
         
-        with open(output_file, 'a') as f:
+        with open(summary_file, 'a') as f:
             f.write(f"\n## {model} {env} Results\n\n")
-            f.write("*Violation and cost rates are normalized by episode length and given per 100 "
-                    "episodes, and lane times are given as a proportion of the total episode length\n\n")
+            f.write("Cost rates are normalized by episode length multiplied by 100 "
+                    "for convenience, and lane times are given as a proportion of the total episode "
+                    "length. For each metric, the mean and standard deviation between experiments is "
+                    "given in the format \"mean (std)\". \n\n")
             f.write("| " + " | ".join(header_cols) + " |\n")
             f.write("|" + "|".join(["---"] * len(header_cols)) + "|\n")
             for row in rows:
                 f.write("| " + " | ".join(str(cell) for cell in row) + " |\n")
     
     # Write summary table
-    with open(output_file, 'a') as f:
+    with open(summary_file, 'a') as f:
         f.write("\n## Experiment Summary\n\n")
         f.write("| Profile | Model-Environment | Method | Experiments | Total Episodes |\n")
         f.write("|---------|-------------------|--------|-------------|----------------|\n")
         for row in summary_rows:
             f.write("| " + " | ".join(row) + " |\n")
     
-    print(f"Analysis complete! Results written to {output_file}")
+    # Write details.md (only violation rates)
+    details_file = os.path.join(args.output_dir, 'details.md')
+    
+    # Write overview (overwrites any existing file)
+    with open(details_file, 'w') as f:
+        f.write("# Norm Violation Details\n")
+    
+    # Write each details table
+    for table_data in details_tables:
+        model = table_data['model']
+        env = table_data['env']
+        header_cols = table_data['header_cols']
+        rows = table_data['rows']
+        
+        with open(details_file, 'a') as f:
+            f.write(f"\n## {model} {env} Violation Rates\n\n")
+            f.write("Violation rates are normalized by episode length multiplied by 100 "
+                    "for convenience. For each metric, the mean and standard deviation between experiments is "
+                    "given in the format \"mean (std)\". \n\n")
+            f.write("| " + " | ".join(header_cols) + " |\n")
+            f.write("|" + "|".join(["---"] * len(header_cols)) + "|\n")
+            for row in rows:
+                f.write("| " + " | ".join(str(cell) for cell in row) + " |\n")
+    
+    print(f"Analysis complete! Results written to:")
+    print(f"  Summary: {summary_file}")
+    print(f"  Details: {details_file}")
 
 
 if __name__ == '__main__':
