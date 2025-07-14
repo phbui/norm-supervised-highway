@@ -1,30 +1,88 @@
-# Metrics‑Driven Normative Supervision for Safe Reinforcement Learning in Autonomous Driving
+# Normative Supervision for Behavior Preferencing in Reinforcement Learning
 
-This project implements a metrics-driven normative supervisor, which augments the actions of a pretrained DQN agent to enforce driving norms and safety constraints. The agent is trained and tested in the [HighwayEnv](https://github.com/Farama-Foundation/HighwayEnv/tree/master) simulation environment using the configurations under the `configs` directory.
+This project implements a normative supervisor which augments the actions of a pretrained DQN agent to enforce driving norms and safety constraints. The agent is trained and tested in the [HighwayEnv](https://github.com/Farama-Foundation/HighwayEnv/tree/master) simulation environment using the configurations under the `configs/` directory.
 
-## Getting Started
+## Table of Contents
+- [1. Getting Started](#1-getting-started)
+    - [1.1. Prerequisites](#11-prerequisites)
+    - [1.2. Installation](#12-installation)
+- [2. Project Structure](#2-project-structure)
+- [3. Usage](#3-usage)
+    - [3.1. Training Models](#31-training-models)
+    - [3.2. Running Experiments](#32-running-experiments)
+    - [3.3. Analyzing Results](#33-analyzing-results)
+- [4. License](#4-license)
 
-After cloning the repository, set up a virtual environment and install the required packages:
- 
-     virtualenv venv
-     source venv/bin/activate
-     pip install -e .
+## 1. Getting Started
 
-## Usage
+### 1.1. Prerequisites
 
-- To run one of our pretrained agents without normative supervision, execute the `run.py` script.
+- `python >= 3.9`
+- `virtualenv` (recommended)
 
-- To reproduce the nominal and zero-shot results from our paper, including the normative supervisor, run the `experiment_run.py` script and select your desired model and scenario configuration when prompted.
+### 1.2. Installation
 
-- Finally, to run the adversarial scenario, use the `adversarial_test.py` script.
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-- Plots can be generated using the `analysis.py` script.
+# Install the package
+pip install .  # Or for editable installation: "pip install -e ."
+```
 
-## Results
+## 2. Project Structure
 
-You can specify a directory for the results when you run the experiment scripts. The results generated for our paper are in the `results` directory. Generated plots will be written to the `results/plots` directory by default.
+```
+norm-supervised-highway/
+├── norm_supervisor/          # Main package
+│   ├── supervisor.py         # Core normative supervisor
+│   ├── metrics.py            # Safety metrics calculation
+│   ├── consts.py             # Constants and utilities
+│   └── norms/                # Norm implementations
+│       ├── norms.py          # Driving norm definitions
+│       ├── abstract.py       # Abstract norm base classes
+│       ├── prediction.py     # Action outcome prediction
+│       └── profiles/         # Driving behavior profiles
+├── scripts/                  # Main execution scripts
+│   ├── train.py              # Train DQN models
+│   ├── test.py               # Run experiments with supervision
+│   └── analyze_results.py    # Analyze experiment results
+├── scripts/old/              # Legacy scripts (for reference)
+├── configs/                  # Configuration files
+│   ├── training/             # Training configurations
+│   └── environment/          # Environment configurations
+├── models/                   # Trained model storage
+├── results/                  # Experiment results
+└── pyproject.toml            # Package configuration
+```
 
+## 3. Usage
 
-## License
+### 3.1. Training Models
+
+```bash
+python scripts/train.py
+```
+
+Select training and environment configurations when prompted.
+
+### 3.2. Running Experiments
+
+```bash
+python scripts/test.py
+```
+
+Choose models, environment configurations, and supervision parameters. Results of the test are written to `results/` by default. Use `--help` to read all of the command-line options.
+
+### 3.3. Analyzing Results
+
+```bash
+python scripts/analyze_results.py
+```
+
+Processes CSV files in `results/` to generate summary statistics, which are written to `analysis/` by default. Use `--help` to read all of the command-line options.
+
+## 4. License
 
 Released under the MIT License.
