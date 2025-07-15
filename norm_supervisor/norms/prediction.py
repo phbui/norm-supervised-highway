@@ -6,8 +6,8 @@ from highway_env.vehicle.controller import MDPVehicle
 
 def get_next_speed(vehicle: MDPVehicle, action: Action) -> float:
     """Return the next speed of the vehicle based on the action."""
-    # Lane changes often require a speed increase
-    if DiscreteMetaAction.ACTIONS_ALL[action] in ["FASTER", "LANE_LEFT", "LANE_RIGHT"]:
+    # TODO: Determine if lane changes cause a speed increase
+    if DiscreteMetaAction.ACTIONS_ALL[action] == "FASTER":
         speed_index_delta = 1
     elif DiscreteMetaAction.ACTIONS_ALL[action] == "SLOWER":
         speed_index_delta = -1

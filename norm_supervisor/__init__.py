@@ -4,7 +4,7 @@ Norm Supervisor Package
 A package for implementing normative supervision in the HighwayEnv driving environment.
 """
 
-from .supervisor import Supervisor, SupervisorMode, SupervisorMethod
+from .supervisor import Supervisor, PolicyAugmentMode, PolicyAugmentMethod
 from .metrics import (
     calculate_ttc,
     calculate_neighbour_ttcs,
@@ -17,8 +17,8 @@ from .consts import ACTION_STRINGS, VEHICLE_LENGTH
 __version__ = "0.1.0"
 __all__ = [
     "Supervisor",
-    "SupervisorMode", 
-    "SupervisorMethod",
+    "PolicyAugmentMode", 
+    "PolicyAugmentMethod",
     "calculate_ttc",
     "calculate_neighbour_ttcs",
     "calculate_tet",

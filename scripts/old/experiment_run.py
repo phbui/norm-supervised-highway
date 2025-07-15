@@ -5,10 +5,11 @@ import gymnasium
 import json
 import numpy as np
 import os
+import torch
 
 from stable_baselines3 import DQN
 
-from norm_supervisor.supervisor import Supervisor, SupervisorMode, SupervisorMethod
+from norm_supervisor.supervisor import Supervisor, PolicyAugmentMode, PolicyAugmentMethod
 import norm_supervisor.norms.norms as norms
 import norm_supervisor.metrics as metrics
 
@@ -51,7 +52,7 @@ def process_args(args: list[str]) -> dict[str, any]:
     :param args: List of command line arguments.
     :return: Dictionary with method, fixed_beta, and kl_budget.
     """
-    method     = SupervisorMethod.ADAPTIVE.value  # Default method
+    method     = PolicyAugmentMethod.ADAPTIVE.value  # Default method
     fixed_beta = 0.01        # Default fixed beta value
     kl_budget  = 0.001       # Default KL budget
 
@@ -66,10 +67,10 @@ def process_args(args: list[str]) -> dict[str, any]:
         cmd_value = args[2]
         try:
             value = float(cmd_value)
-            if method == SupervisorMethod.FIXED.value:
+            if method == PolicyAugmentMethod.FIXED.value:
                 fixed_beta = value
                 print(f"Using fixed beta value: {fixed_beta}")
-            elif method == SupervisorMethod.ADAPTIVE.value:
+            elif method == PolicyAugmentMethod.ADAPTIVE.value:
                 kl_budget = value
                 print(f"Using KL budget: {kl_budget}")
             else:
@@ -122,8 +123,12 @@ def main(env_name = "highway-fast-v0"):
 
     output_file = get_output_filename()
 
+    # Check if CUDA is available and set device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    
     print(f"\nLoading model from {model_path}...")
-    model = DQN.load(model_path)
+    model = DQN.load(model_path, device=device)
     model.set_random_seed(BASE_SEED)
 
     num_experiments = 5
@@ -167,11 +172,11 @@ def main(env_name = "highway-fast-v0"):
             print(f"Creating environment with config from {env_config_path}...")
             env = gymnasium.make(env_name, render_mode="rgb_array", config=env_config)
             if mode == "WITH SUPERVISOR NAIVE AUGMENT":
-                supervisor_mode = SupervisorMode.NAIVE_AUGMENT.value
+                supervisor_mode = PolicyAugmentMode.NAIVE_AUGMENT.value
             elif mode == "WITH SUPERVISOR FILTER ONLY":
-                supervisor_mode = SupervisorMode.FILTER_ONLY.value
+                supervisor_mode = PolicyAugmentMode.FILTER_ONLY.value
             else:
-                supervisor_mode = SupervisorMode.DEFAULT.value
+                supervisor_mode = PolicyAugmentMode.DEFAULT.value
             verbose_supervisor = False # set for verbose output
             supervisor = Supervisor(
                 env.unwrapped,
@@ -392,8 +397,8 @@ def main(env_name = "highway-fast-v0"):
         f.write(f"Episodes: {num_episodes}\n")
         if "WITH SUPERVISOR" in results:
             f.write(f"Method: {args['method']}\n")
-            f.write(f"Fixed Beta: {args['fixed_beta'] if args['method'] == SupervisorMethod.FIXED.value else "N/A"}\n")
-            f.write(f"KL Budget: {args['kl_budget'] if args['method'] == SupervisorMethod.ADAPTIVE.value else "N/A"}\n\n")
+            f.write(f"Fixed Beta: {args['fixed_beta'] if args['method'] == PolicyAugmentMethod.FIXED.value else "N/A"}\n")
+            f.write(f"KL Budget: {args['kl_budget'] if args['method'] == PolicyAugmentMethod.ADAPTIVE.value else "N/A"}\n\n")
         else:
             f.write("\n")
 

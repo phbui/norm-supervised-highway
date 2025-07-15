@@ -52,11 +52,13 @@ def calculate_neighbour_ttcs(
         vehicle_to_test = Vehicle(
             road=vehicle.road,
             position=vehicle.position,
+            heading=vehicle.heading,
             speed=next_speed,
+            predition_type=vehicle.prediction_type
         )
     v_front, v_rear = vehicle.road.neighbour_vehicles(vehicle, lane_index)
     ttc_front = calculate_ttc(v_front, vehicle_to_test)
-    ttc_rear  = calculate_ttc(vehicle_to_test, v_rear)   
+    ttc_rear  = calculate_ttc(vehicle_to_test, v_rear)
     return (ttc_front, ttc_rear)
 
 def calculate_tet(ttc_history: npt.ArrayLike, simulation_frequency: float,

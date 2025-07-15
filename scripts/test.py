@@ -8,38 +8,34 @@ import sys
 from collections import defaultdict
 
 import gymnasium
+import torch
 from stable_baselines3 import DQN
 from highway_env.envs.highway_env import HighwayEnv
 
-from norm_supervisor.supervisor import Supervisor, SupervisorMode, SupervisorMethod
-import norm_supervisor.norms.norms as norms
+from norm_supervisor.supervisor import Supervisor, PolicyAugmentMode, PolicyAugmentMethod
+from norm_supervisor.norms.norms import TailgatingNorm
 import norm_supervisor.metrics as metrics
 
 # Configuration mappings
 CONFIGS = {
-    '2L5V': {
-        'model_file': 'trained_30_duration_2_lanes_5_vehicles.zip',
-        'env_config': 'train_30_duration_2_lanes_5_vehicles.json',
+    'default': {
+        'model_file': '2_lanes_5_vehicles.zip',
+        'env_config': '2_lanes_5_vehicles.json',
         'lanes': 2
-    },
-    '4L20V': {
-        'model_file': 'trained_30_duration_4_lanes_20_vehicles.zip',
-        'env_config': 'train_30_duration_4_lanes_20_vehicles.json',
-        'lanes': 4
     }
 }
 
 MODE_MAPPING = {
-    'unsupervised': SupervisorMode.NOP,
-    'filter_only': SupervisorMode.FILTER_ONLY,
-    'naive_augment': SupervisorMode.NAIVE_AUGMENT,
-    'default': SupervisorMode.DEFAULT
+    'nop': PolicyAugmentMode.NOP,
+    'default': PolicyAugmentMode.DEFAULT,
+    'naive_augment': PolicyAugmentMode.NAIVE_AUGMENT,
 }
 
 METHOD_MAPPING = {
-    'adaptive': SupervisorMethod.ADAPTIVE,
-    'fixed': SupervisorMethod.FIXED,
-    'nop': SupervisorMethod.NOP
+    'nop': PolicyAugmentMethod.NOP,
+    'adaptive': PolicyAugmentMethod.ADAPTIVE,
+    'fixed': PolicyAugmentMethod.FIXED
+    
 }
 
 BASE_SEED = 239
@@ -53,11 +49,10 @@ class ExperimentConfig:
         self.mode = args.mode
         self.method = args.method
         self.value = args.value
-        self.model_config = args.model
-        self.env_config = args.env
         self.num_experiments = args.experiments
         self.num_episodes = args.episodes
         self.output_file = args.output
+        self.filter = args.filter
         
         # Validate configuration
         self._validate()
@@ -71,12 +66,12 @@ class ExperimentConfig:
                 raise ValueError("--value is required for adaptive/fixed methods")
         
         # Check if model file exists
-        model_path = os.path.join("models", CONFIGS[self.model_config]['model_file'])
+        model_path = os.path.join("models", CONFIGS['default']['model_file'])
         if not os.path.exists(model_path):
             raise ValueError(f"Model file not found: {model_path}")
         
         # Check if environment config exists
-        env_config_path = os.path.join("configs/environment", CONFIGS[self.env_config]['env_config'])
+        env_config_path = os.path.join("configs/environment", CONFIGS['default']['env_config'])
         if not os.path.exists(env_config_path):
             raise ValueError(f"Environment config not found: {env_config_path}")
 
@@ -91,7 +86,7 @@ class EpisodeMetrics:
         self.following_distances = []
         self.speeds = []
 
-        self.lane_times = {f'lane_{i}': 0 for i in range(lane_count)}
+        self.lane_times = {f'lane_{i}': 0.0 for i in range(lane_count)}
         
         self.norm_violations            = defaultdict(int)
         self.constraint_violations      = defaultdict(int)
@@ -176,7 +171,7 @@ class ExperimentResults:
         mean_speeds = [ep.mean_speed for ep in self.episode_metrics if not np.isnan(ep.mean_speed)]
 
         # Aggregate lane times
-        lane_count = CONFIGS[self.config.env_config]['lanes']
+        lane_count = CONFIGS['default']['lanes']
         all_lane_times = defaultdict(list)
         for ep in self.episode_metrics:
             for lane, time in ep.lane_times.items():
@@ -263,6 +258,8 @@ class CSVWriter:
     def _create_file(self):
         """Create the CSV file with headers."""
         try:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
             with open(self.output_file, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
@@ -284,7 +281,7 @@ class ExperimentRunner:
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
-        self.lane_count = CONFIGS[config.env_config]['lanes']
+        self.lane_count = CONFIGS['default']['lanes']
         self.csv_writer = CSVWriter(config.output_file, self.lane_count)
         
         # Load model and environment config
@@ -293,15 +290,19 @@ class ExperimentRunner:
     
     def _load_model(self) -> DQN:
         """Load the DQN model."""
-        model_path = os.path.join("models", CONFIGS[self.config.model_config]['model_file'])
+        # Check if CUDA is available and set device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {device}")
+        
+        model_path = os.path.join("models", CONFIGS['default']['model_file'])
         print(f"Loading model from {model_path}...")
-        model = DQN.load(model_path)
+        model = DQN.load(model_path, device=device)
         model.set_random_seed(BASE_SEED)
         return model
     
     def _load_env_config(self) -> dict:
         """Load environment configuration."""
-        env_config_path = os.path.join("configs/environment", CONFIGS[self.config.env_config]['env_config'])
+        env_config_path = os.path.join("configs/environment", CONFIGS['default']['env_config'])
         print(f"Loading environment config from {env_config_path}...")
         with open(env_config_path, 'r') as f:
             return json.load(f)
@@ -315,7 +316,7 @@ class ExperimentRunner:
             kl_budget = self.config.value if self.config.method == 'adaptive' else None
         else:
             supervisor_mode = MODE_MAPPING[self.config.mode].value
-            supervisor_method = SupervisorMethod.NOP.value
+            supervisor_method = PolicyAugmentMethod.NOP.value
             fixed_beta = None
             kl_budget = None
         
@@ -324,6 +325,7 @@ class ExperimentRunner:
             profile_name=self.config.profile,
             mode=supervisor_mode,
             method=supervisor_method,
+            filter=self.config.filter,
             fixed_beta=fixed_beta,
             kl_budget=kl_budget,
             verbose=False
@@ -354,9 +356,6 @@ class ExperimentRunner:
             # Create metrics collector for this episode
             episode_metrics = EpisodeMetrics(self.lane_count)
             
-            # Create tailgating norm for following distance calculation
-            tailgating_norm = norms.TailgatingNorm(weight=None, safe_distance=None)
-            
             done = truncated = False
             while not (done or truncated):
                 # Get model action
@@ -372,7 +371,7 @@ class ExperimentRunner:
                 constraint_violations_dict = supervisor.count_constraint_violations(action)
                 
                 # Apply supervisor if needed
-                if self.config.mode != 'unsupervised':
+                if self.config.mode != 'nop' or self.config.filter:
                     new_action = supervisor.decide_action(self.model, obs)
                     new_violations_dict = supervisor.count_norm_violations(new_action)
                     new_violations_weight_dict = supervisor.weight_norm_violations(new_violations_dict)
@@ -394,7 +393,7 @@ class ExperimentRunner:
                 # Calculate metrics
                 ttcs = metrics.calculate_neighbour_ttcs(env_unwrapped.vehicle)
                 ttc = ttcs[0] if ttcs[0] != np.inf else np.nan
-                following_distance = tailgating_norm.evaluate_criterion(env_unwrapped.vehicle)
+                following_distance = TailgatingNorm.evaluate_criterion(env_unwrapped.vehicle)
                 following_distance = following_distance if following_distance != np.inf else np.nan
                 speed = env_unwrapped.vehicle.speed
                 _, _, lane_index = env_unwrapped.vehicle.lane_index
@@ -417,6 +416,7 @@ class ExperimentRunner:
                 # Check for collision
                 if done or truncated:
                     if info.get("crashed", False):
+                        print(f"*** CRASHED WITH SEED {episode_seed} ***")
                         episode_metrics.collision = True
             
             # Finalize episode metrics
@@ -437,31 +437,32 @@ class ExperimentRunner:
         print(f"  Mode: {self.config.mode}")
         print(f"  Method: {self.config.method or 'N/A'}")
         print(f"  Value: {self.config.value or 'N/A'}")
-        print(f"  Model: {self.config.model_config}")
-        print(f"  Environment: {self.config.env_config}")
+        print(f"  Model: {CONFIGS['default']['model_file']}")
+        print(f"  Environment: {CONFIGS['default']['env_config']}")
         print(f"  Experiments: {self.config.num_experiments}")
         print(f"  Episodes per experiment: {self.config.num_episodes}")
         print(f"  Output: {self.config.output_file}")
+        
+        # Use the output file path as provided by the shell script
+        # The shell script already creates the proper directory structure
+        print(f"Results will be written to: {self.config.output_file}")
         
         for experiment_id in range(self.config.num_experiments):
             try:
                 results = self.run_experiment(experiment_id)
                 experiment_means = results.get_experiment_means()
                 self.csv_writer.write_experiment(experiment_means)
-                
                 print(f"Experiment {experiment_id + 1} completed:")
                 print(f"  Collisions: {experiment_means['collision_count']}")
                 print(f"  Mean TTC: {experiment_means['mean_ttc']:.3f}")
                 print(f"  Mean speed: {experiment_means['mean_speed']:.2f} m/s")
-                
             except Exception as e:
                 import traceback
                 print(f"Error in experiment {experiment_id + 1}: {e}")
                 print(f"Full traceback:")
                 traceback.print_exc()
                 raise
-        
-        print(f"\nAll experiments completed. Results written to {self.config.output_file}")
+        print(f"\nAll experiments completed. Results written to {self.csv_writer.output_file}")
 
 
 def parse_arguments():
@@ -473,22 +474,23 @@ def parse_arguments():
     
     parser.add_argument('--profile', choices=['cautious', 'efficient'], required=True,
                        help='Driving profile to use')
-    parser.add_argument('--mode', choices=['unsupervised', 'filter_only', 'naive_augment', 'default'], 
+    parser.add_argument('--mode', choices=['nop', 'naive_augment', 'default'], 
                        required=True, help='Supervisor mode')
     parser.add_argument('--method', choices=['adaptive', 'fixed'], 
                        help='Supervisor method (required for default mode)')
     parser.add_argument('--value', type=float, 
                        help='Value for adaptive/fixed methods (required for default mode)')
-    parser.add_argument('--model', choices=['2L5V', '4L20V'], required=True,
-                       help='Model configuration')
-    parser.add_argument('--env', choices=['2L5V', '4L20V'], required=True,
-                       help='Environment configuration')
     parser.add_argument('--experiments', type=int, default=5,
                        help='Number of experiments to run')
     parser.add_argument('--episodes', type=int, default=100,
                        help='Number of episodes per experiment')
     parser.add_argument('--output', required=True,
                        help='Output CSV file path')
+    parser.add_argument('--filter', dest='filter', action='store_true',
+                       help='Enable supervisor filtering (default: True)')
+    parser.add_argument('--no-filter', dest='filter', action='store_false',
+                       help='Disable supervisor filtering')
+    parser.set_defaults(filter=True)
     
     args = parser.parse_args()
     

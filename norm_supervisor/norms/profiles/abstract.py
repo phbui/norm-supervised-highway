@@ -1,25 +1,30 @@
 from abc import ABC
 
-from norm_supervisor.norms.abstract import AbstractNorm
+from norm_supervisor.norms.abstract import AbstractNorm, AbstractConstraint
+from norm_supervisor.norms.constraints import CollisionConstraint, LaneChangeCollisionConstraint
 from norm_supervisor.norms.norms import LanePreference
 
 class AbstractNormProfile(ABC):
     """Abstract class for norm profiles."""
     # NOTE: The collision threshold must be greater than the policy period (1/policy_frequency).
-    COLLISION_THRESHOLD: float               # Minimum TTC (s)
+    COLLISION_THRESHOLD = 1.0                # Minimum TTC (s)
+
+    # Constants for the norm profile
     TARGET_SPEED_RANGE: tuple[float, float]  # Target speed range in m/s
     TARGET_FOLLOWING_DISTANCE: float         # Target following distance in meters
     BRAKING_THRESHOLD: float                 # Minimum TTC (s) for braking behavior
     LANE_PREFERENCE: LanePreference          # Preferred lane (LEFT, RIGHT, NONE)
     
-    def __init__(self, constraints: list[AbstractNorm], norms: list[AbstractNorm]):
+    def __init__(self, norms: list[AbstractNorm]):
         """Initialize the norm profile with hard constraints and norms."""
-        self.constraints = constraints
         self.norms = norms
+        self.constraints: list[AbstractConstraint] = [
+            CollisionConstraint(self.collision_threshold),
+            LaneChangeCollisionConstraint(self.collision_threshold),
+        ]
 
     def __init_subclass__(cls):
         required_constants = [
-            'COLLISION_THRESHOLD',
             'TARGET_SPEED_RANGE',
             'TARGET_FOLLOWING_DISTANCE',
             'BRAKING_THRESHOLD',

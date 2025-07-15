@@ -22,5 +22,6 @@ dependencies = [
   "scipy>=1.10.0",
   "stable-baselines3>=2.6.0",
   "torch>=2.7.1",
-  "matplotlib>=3.10.1"
+  "matplotlib>=3.10.1", # For analysis
+  "tensorboard>=2.14.0" # For training logs
 ]

@@ -2,6 +2,7 @@ import os
 import json
 import gymnasium
 import highway_env
+import torch
 from stable_baselines3 import DQN
 
 
@@ -31,6 +32,10 @@ def choose_config(config_dir, config_type):
 
 
 def main():
+    # Check if CUDA is available and set device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    
     training_config = choose_config("configs/training", "training")
     env_config = choose_config("configs/environment", "environment")
 
@@ -53,7 +58,8 @@ def main():
         gradient_steps=training_config.get("gradient_steps", 1),
         target_update_interval=training_config.get("target_update_interval", 50),
         verbose=1,
-        tensorboard_log=training_config.get("tensorboard_log", "models/highway_dqn/")
+        tensorboard_log=training_config.get("tensorboard_log", "models/tensorboard_logs/"),
+        device=device
     )
 
     print("\nStarting training...")

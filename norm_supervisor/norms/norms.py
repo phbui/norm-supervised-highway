@@ -27,15 +27,18 @@ class SpeedNorm(AbstractNorm):
         super().__init__(
             weight,
             [
-                ACTION_STRINGS["IDLE"],
                 ACTION_STRINGS["FASTER"],
-                ACTION_STRINGS["SLOWER"]
+                ACTION_STRINGS["SLOWER"],
+                ACTION_STRINGS["IDLE"],
+                ACTION_STRINGS["LANE_LEFT"],
+                ACTION_STRINGS["LANE_RIGHT"]
             ]
         )
         self.min_speed = target_speed_range[0]
         self.max_speed = target_speed_range[1]
 
-    def evaluate_criterion(self, vehicle: MDPVehicle, action: Action) -> float:
+    @staticmethod
+    def evaluate_criterion(vehicle: MDPVehicle, action: Action) -> float:
         """Return the next speed of the ego vehicle."""
         return get_next_speed(vehicle, action)
     
@@ -43,6 +46,7 @@ class SpeedNorm(AbstractNorm):
         """Check if the action produces a speed outside of the target speed range."""
         if action not in self.violating_actions:
             return False
+
         speed = self.evaluate_criterion(vehicle, action)
         return speed < self.min_speed or speed > self.max_speed
     
@@ -56,14 +60,17 @@ class TailgatingNorm(AbstractNorm):
         super().__init__(
             weight,
             [
+                ACTION_STRINGS["FASTER"],
                 ACTION_STRINGS["IDLE"],
-                ACTION_STRINGS["FASTER"]
+                # If the lane change is disallowed, the action is effectively IDLE
+                ACTION_STRINGS["LANE_LEFT"],
+                ACTION_STRINGS["LANE_RIGHT"]
             ]
         )
         self.safe_distance = safe_distance
 
+    @staticmethod
     def evaluate_criterion(
-        self,
         vehicle: MDPVehicle,
         lane_index: LaneIndex = None,
         check_rear: bool = False
@@ -86,6 +93,10 @@ class TailgatingNorm(AbstractNorm):
         if action not in self.violating_actions:
             return False
         
+        # If the action results in a lane change, this norm is not violated
+        if get_next_lane_index(vehicle, action) != vehicle.target_lane_index:
+            return False
+        
         distance = self.evaluate_criterion(vehicle, lane_index, check_rear)
         return distance < self.safe_distance
         
@@ -100,13 +111,18 @@ class BrakingNorm(AbstractNorm):
             weight,
             [
                 ACTION_STRINGS["FASTER"],
-                ACTION_STRINGS["IDLE"]
+                # SLOWER can still be norm-violating if a safe lane change is possible
+                ACTION_STRINGS["SLOWER"],
+                ACTION_STRINGS["IDLE"],
+                # If the lane change is disallowed, the action is effectively IDLE
+                ACTION_STRINGS["LANE_LEFT"],
+                ACTION_STRINGS["LANE_RIGHT"]
             ]
         )
         self.min_ttc = min_ttc
 
+    @staticmethod
     def evaluate_criterion(
-        self,
         vehicle: MDPVehicle,
         action: Action,
         lane_index: LaneIndex = None,
@@ -126,6 +142,10 @@ class BrakingNorm(AbstractNorm):
     ) -> bool:
         """Check if the action produces or worsens a braking violation."""
         if action not in self.violating_actions:
+            return False
+        
+        # If the action results in a lane change, this norm is not violated
+        if get_next_lane_index(vehicle, action) != vehicle.target_lane_index:
             return False
         
         ttc = self.evaluate_criterion(vehicle, action, lane_index, check_rear)
@@ -195,13 +215,17 @@ class LaneKeepingNorm(AbstractNorm):
         super().__init__(
             weight,
             [
+                ACTION_STRINGS["FASTER"],
+                ACTION_STRINGS["SLOWER"],
+                ACTION_STRINGS["IDLE"],
                 ACTION_STRINGS["LANE_LEFT"],
                 ACTION_STRINGS["LANE_RIGHT"]
             ]
         )
         self.lane_preference = lane_preference
 
-    def evaluate_criterion(self, vehicle: MDPVehicle, action: Action) -> LaneIndex:
+    @staticmethod
+    def evaluate_criterion(vehicle: MDPVehicle, action: Action) -> LaneIndex:
         """Return the next lane index after applying the action."""
         return get_next_lane_index(vehicle, action)
 
