@@ -1,5 +1,4 @@
 from enum import Enum
-import numpy as np
 
 from highway_env.envs.common.action import Action
 from highway_env.road.road import LaneIndex
@@ -7,32 +6,30 @@ from highway_env.vehicle.controller import MDPVehicle
 
 from norm_supervisor.consts import ACTION_STRINGS
 from norm_supervisor.norms.abstract import AbstractNorm
+from norm_supervisor.norms.constraints import (
+    SafetyEnvelopeConstraint,
+    LaneChangeSafetyEnvelopeConstraint
+)
 from norm_supervisor.norms.prediction import get_next_speed, get_next_lane_index
 import norm_supervisor.metrics as metrics
 
-class LanePreference(Enum):
-    """Enum for lane preferences."""
-    LEFT  = 'left'
-    RIGHT = 'right'
-    NONE  = 'none'
-
 class SpeedNorm(AbstractNorm):
     """Norm for enforcing a target speed range."""
-    def __init__(self, weight: int, target_speed_range: tuple[float, float]):
+    def __init__(self, target_speed_range: tuple[float, float], weight: int = 1):
         """Initialize the speed norm with a weight and a target speed range."""
         if target_speed_range[0] > target_speed_range[1]:
             raise ValueError("Target speed range must be a tuple of (min_speed, max_speed) where "
                              "min_speed <= max_speed.")
 
         super().__init__(
-            weight,
-            [
+            violating_actions=[
                 ACTION_STRINGS["FASTER"],
                 ACTION_STRINGS["SLOWER"],
                 ACTION_STRINGS["IDLE"],
                 ACTION_STRINGS["LANE_LEFT"],
                 ACTION_STRINGS["LANE_RIGHT"]
-            ]
+            ],
+            weight=weight
         )
         self.min_speed = target_speed_range[0]
         self.max_speed = target_speed_range[1]
@@ -51,65 +48,14 @@ class SpeedNorm(AbstractNorm):
         return speed < self.min_speed or speed > self.max_speed
     
     def __str__(self):
-        return "Speeding"
-
-class TailgatingNorm(AbstractNorm):
-    """Norm constraint for enforcing a safe following distance."""
-    def __init__(self, weight: int, safe_distance: float):
-        """Initialize the tailgating norm with a weight and environment parameters."""
-        super().__init__(
-            weight,
-            [
-                ACTION_STRINGS["FASTER"],
-                ACTION_STRINGS["IDLE"],
-                # If the lane change is disallowed, the action is effectively IDLE
-                ACTION_STRINGS["LANE_LEFT"],
-                ACTION_STRINGS["LANE_RIGHT"]
-            ]
-        )
-        self.safe_distance = safe_distance
-
-    @staticmethod
-    def evaluate_criterion(
-        vehicle: MDPVehicle,
-        lane_index: LaneIndex = None,
-        check_rear: bool = False
-    ) -> float:
-        """Return the distance to the vehicle ahead or behind."""
-        v_front, v_rear = vehicle.road.neighbour_vehicles(vehicle, lane_index)
-        v_to_check = v_rear if check_rear else v_front
-        if v_to_check is not None:
-            return v_to_check.position[0] - vehicle.position[0] - MDPVehicle.LENGTH
-        return np.inf
-    
-    def is_violating_action(
-            self,
-            vehicle: MDPVehicle,
-            action: Action,
-            lane_index: LaneIndex = None,
-            check_rear: bool = False
-    ) -> bool:
-        """Check if the action produces or worsens a tailgating violation."""
-        if action not in self.violating_actions:
-            return False
-        
-        # If the action results in a lane change, this norm is not violated
-        if get_next_lane_index(vehicle, action) != vehicle.target_lane_index:
-            return False
-        
-        distance = self.evaluate_criterion(vehicle, lane_index, check_rear)
-        return distance < self.safe_distance
-        
-    def __str__(self):
-        return "Tailgating"
+        return "SpeedNorm"
 
 class BrakingNorm(AbstractNorm):
     """Norm constraint for avoiding sudden braking."""
-    def __init__(self, weight: int, min_ttc: float):
+    def __init__(self, min_ttc: float, weight: int = 1):
         """Initialize the braking norm with a weight and a minimum TTC."""
         super().__init__(
-            weight,
-            [
+            violating_actions=[
                 ACTION_STRINGS["FASTER"],
                 # SLOWER can still be norm-violating if a safe lane change is possible
                 ACTION_STRINGS["SLOWER"],
@@ -117,7 +63,8 @@ class BrakingNorm(AbstractNorm):
                 # If the lane change is disallowed, the action is effectively IDLE
                 ACTION_STRINGS["LANE_LEFT"],
                 ACTION_STRINGS["LANE_RIGHT"]
-            ]
+            ],
+            weight=weight
         )
         self.min_ttc = min_ttc
 
@@ -152,40 +99,13 @@ class BrakingNorm(AbstractNorm):
         return ttc < self.min_ttc
 
     def __str__(self):
-        return "Braking"
-
-class LaneChangeTailgatingNorm(TailgatingNorm):
-    """Norm constraint for enforcing safe distances for lane changes."""
-    def __init__(self, weight: int, safe_distance: float):
-        """Initialize the lane change tailgating norm with a weight and environment parameters."""
-        super().__init__(weight, safe_distance)
-        self.violating_actions = [
-            ACTION_STRINGS["LANE_LEFT"],
-            ACTION_STRINGS["LANE_RIGHT"]
-        ]
-
-    def is_violating_action(self, vehicle: MDPVehicle, action: Action) -> bool:
-        """Check if the action produces or worsens a tailgating violation for lane changes."""
-        if action not in self.violating_actions:
-            return False
-        
-        # Return False if the action does not result in a lane change
-        next_lane_index = get_next_lane_index(vehicle, action)
-        if next_lane_index == vehicle.target_lane_index:
-            return False
-
-        distance_front = super().evaluate_criterion(vehicle, next_lane_index, False)
-        distance_rear = super().evaluate_criterion(vehicle, next_lane_index, True)
-        return distance_front < self.safe_distance or distance_rear < self.safe_distance
-
-    def __str__(self):
-        return "LaneChangeTailgating"
+        return "BrakingNorm"
 
 class LaneChangeBrakingNorm(BrakingNorm):
     """Norm constraint for avoiding sudden braking due to lane changes."""
-    def __init__(self, weight: int, min_ttc: float):
+    def __init__(self, min_ttc: float, weight: int = 1):
         """Initialize the braking constraint with a weight and a minimum TTC."""
-        super().__init__(weight, min_ttc)
+        super().__init__(min_ttc=min_ttc, weight=weight)
         self.violating_actions = [
             ACTION_STRINGS["LANE_LEFT"],
             ACTION_STRINGS["LANE_RIGHT"]
@@ -206,21 +126,47 @@ class LaneChangeBrakingNorm(BrakingNorm):
         return ttc_front < self.min_ttc or ttc_rear < self.min_ttc
 
     def __str__(self):
-        return "LaneChangeBraking"
+        return "LaneChangeBrakingNorm"
+
+class TailgatingNorm(SafetyEnvelopeConstraint, AbstractNorm):
+    """Norm constraint for enforcing a safe following distance."""
+    def __init__(self, safe_distance: float, weight: int = 1):
+        """Initialize the tailgating norm with a weight and a safe distance."""
+        SafetyEnvelopeConstraint.__init__(self, safe_distance=safe_distance)
+        AbstractNorm.__init__(self, violating_actions=self.violating_actions, weight=weight)
+        
+    def __str__(self):
+        return "TailgatingNorm"
+    
+class LaneChangeTailgatingNorm(LaneChangeSafetyEnvelopeConstraint, AbstractNorm):
+    """Norm constraint for enforcing a safe following distance during lane changes."""
+    def __init__(self, safe_distance: float, weight: int = 1):
+        """Initialize the lane change tailgating norm with a weight and a safe distance."""
+        SafetyEnvelopeConstraint.__init__(self, safe_distance=safe_distance)
+        AbstractNorm.__init__(self, violating_actions=self.violating_actions, weight=weight)
+        
+    def __str__(self):
+        return "LaneChangeTailgatingNorm"
+
+class LanePreference(Enum):
+    """Enum for lane preferences."""
+    LEFT  = 'left'
+    RIGHT = 'right'
+    NONE  = 'none'
 
 class LaneKeepingNorm(AbstractNorm):
     """Norm constraint for enforcing lane keeping."""
-    def __init__(self, weight: int, lane_preference: LanePreference):
+    def __init__(self, lane_preference: LanePreference, weight: int = 1):
         """Initialize the lane keeping norm with a weight."""
         super().__init__(
-            weight,
-            [
+            violating_actions=[
                 ACTION_STRINGS["FASTER"],
                 ACTION_STRINGS["SLOWER"],
                 ACTION_STRINGS["IDLE"],
                 ACTION_STRINGS["LANE_LEFT"],
                 ACTION_STRINGS["LANE_RIGHT"]
-            ]
+            ],
+            weight=weight
         )
         self.lane_preference = lane_preference
 
@@ -250,4 +196,4 @@ class LaneKeepingNorm(AbstractNorm):
             raise ValueError(f"Unknown lane preference: {self.lane_preference}")
 
     def __str__(self):
-        return "LaneKeeping"
+        return "LaneKeepingNorm"

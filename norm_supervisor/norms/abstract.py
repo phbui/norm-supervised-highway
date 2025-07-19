@@ -17,7 +17,7 @@ class AbstractConstraint(ABC):
 
     @staticmethod
     @abstractmethod
-    def evaluate_criterion(vehicle: Vehicle, *args, **kwargs) -> float:
+    def evaluate_criterion(vehicle: Vehicle, *args, **kwargs) -> any:
         """Evaluate the criterion for the norm constraint.
 
         :param vehicle: the vehicle for which to evaluate the criterion.
@@ -45,7 +45,7 @@ class AbstractConstraint(ABC):
 class AbstractNorm(AbstractConstraint):
     """Abstract base class for norms, represented as weighted constraints."""
 
-    def __init__(self, weight: int, violating_actions: list[Action]) -> None:
+    def __init__(self, violating_actions: list[Action], weight: int = 1) -> None:
         """Initialize the norm with a weight and a list of potentially violating actions.
 
         :param weight: the norm weight, used for prioritization.

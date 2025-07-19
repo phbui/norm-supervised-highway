@@ -1,7 +1,7 @@
 """
 Norms Package
 
-Contains norm definitions and profiles for the norm supervisor.
+Defines norms and constraints for the norm supervisor.
 """
 
 from .abstract import AbstractNorm

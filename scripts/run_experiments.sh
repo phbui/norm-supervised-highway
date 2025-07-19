@@ -9,48 +9,55 @@ FORCE_WRITE=false
 
 experiments=(
     # BASELINES
-    # <profile>  <mode>         <method>  <value>  <filter>
-    " cautious   nop            nan           nan   false "  # Cautious unsupervised
-    " cautious   nop            nan           nan   true  "
-    " cautious   naive_augment  nan           nan   true  "
-    " efficient  nop            nan           nan   false "  # Efficient unsupervised
-    " efficient  nop            nan           nan   true  " 
-    " efficient  naive_augment  nan           nan   true  " 
+    # <profile>  <method>  <value>  <filter>
+    " cautious   nop           nan  no-filter "  # Cautious unsupervised
+    " cautious   nop           nan  filter    "  # Cautious filter-only
+    " cautious   naive         nan  filter    "  # Cautious naive augment
+    " efficient  nop           nan  no-filter "  # Efficient unsupervised
+    " efficient  nop           nan  filter    "  # Efficient filter-only
+    " efficient  naive         nan  filter    "  # Efficient naive augment
 
     # ADAPTIVE
-    # <profile>  <mode>         <method>  <value>  <filter>
-    " cautious   default        adaptive    0.005   true "
-    " cautious   default        adaptive    0.010   true "
-    " cautious   default        adaptive    0.050   true "
-    " efficient  default        adaptive    0.005   true "
-    " efficient  default        adaptive    0.010   true "
-    " efficient  default        adaptive    0.050   true "
+    # <profile>  <method>  <value>  <filter>
+    " cautious   adaptive     0.01  filter    "
+    " cautious   adaptive     0.10  filter    "
+    " cautious   adaptive     1.00  filter    "
+    " efficient  adaptive     0.01  filter    "
+    " efficient  adaptive     0.10  filter    "
+    " efficient  adaptive     1.00  filter    "
 
     # FIXED
-    # <profile>  <mode>         <method>  <value>  <filter>
-    " cautious   default        fixed         0.5   true "
-    " cautious   default        fixed           1   true "
-    " cautious   default        fixed           5   true "
-    " efficient  default        fixed         0.5   true "
-    " efficient  default        fixed           1   true "
-    " efficient  default        fixed           5   true "
+    # <profile>  <method>  <value>  <filter>
+    " cautious   fixed        0.01  filter    "
+    " cautious   fixed        0.10  filter    "
+    " cautious   fixed        1.00  filter    "
+    " efficient  fixed        0.01  filter    "
+    " efficient  fixed        0.10  filter    "
+    " efficient  fixed        1.00  filter    "
+
+    # LOG SPACED TRIALS
+    # <profile>  <method>  <value>  <filter>
+    " cautious   adaptive   0.0316  filter    "
+    " cautious   adaptive   0.3162  filter    "
+    " cautious   adaptive   3.1623  filter    "
+    " cautious   adaptive   10.000  filter    "
 
     # ABLATIONS
-    # <profile>  <mode>         <method>  <value>  <filter>
-    " cautious   naive_augment  nan           nan   false "
-    " efficient  naive_augment  nan           nan   false "
-    " cautious   default        adaptive    0.005   false "
-    " cautious   default        adaptive    0.010   false "
-    " cautious   default        adaptive    0.050   false "
-    " efficient  default        adaptive    0.005   false "
-    " efficient  default        adaptive    0.010   false "
-    " efficient  default        adaptive    0.050   false "
-    " cautious   default        fixed         0.5   false "
-    " cautious   default        fixed           1   false "
-    " cautious   default        fixed           5   false "
-    " efficient  default        fixed         0.5   false "
-    " efficient  default        fixed           1   false "
-    " efficient  default        fixed           5   false "
+    # <profile>  <method>  <value>  <filter>
+    " cautious   naive         nan  no-filter "
+    " efficient  naive         nan  no-filter "
+    " cautious   adaptive     0.01  no-filter "
+    " cautious   adaptive     0.10  no-filter "
+    " cautious   adaptive     1.00  no-filter "
+    " efficient  adaptive     0.01  no-filter "
+    " efficient  adaptive     0.10  no-filter "
+    " efficient  adaptive     1.00  no-filter "
+    " cautious   fixed        0.01  no-filter "
+    " cautious   fixed        0.10  no-filter "
+    " cautious   fixed        1.00  no-filter "
+    " efficient  fixed        0.01  no-filter "
+    " efficient  fixed        0.10  no-filter "
+    " efficient  fixed        1.00  no-filter "
 )
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,38 +67,44 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 mkdir -p "$PROJECT_ROOT/results"
 
 for args in "${experiments[@]}"; do
-    read profile mode method value filter <<< "$args"
+    read profile method value filter <<< "$args"
 
-    # Create subdirectory based on mode and filter status
-    if [ "$mode" == "default" ]; then
-        if [ "$filter" == "true" ]; then 
+    if [ "$filter" == "filter" ]; then
+        filter_arg="--filter"
+    else
+        filter_arg="--no-filter"
+    fi
+
+    # Create subdirectory based on method and filter status
+    if [ "$method" == "adaptive" ] || [ "$method" == "fixed" ]; then
+        if [ "$filter" == "filter" ]; then 
             filter_suffix="_filtered"
         else 
             filter_suffix="_unfiltered"
         fi
         sub_dir="${method}${filter_suffix}"
-    elif [ "$mode" == "naive_augment" ]; then
-        if [ "$filter" == "true" ]; then 
+    elif [ "$method" == "naive" ]; then
+        if [ "$filter" == "filter" ]; then 
             filter_suffix="_filtered"
         else 
             filter_suffix="_unfiltered"
         fi
-        sub_dir="${mode}${filter_suffix}"
-    elif [ "$mode" == "nop" ]; then
-        if [ "$filter" == "true" ]; then 
+        sub_dir="${method}${filter_suffix}"
+    elif [ "$method" == "nop" ]; then
+        if [ "$filter" == "filter" ]; then 
             sub_dir="filter_only"
         else 
             sub_dir="unsupervised"
         fi
     else
-        sub_dir="${mode}"
+        sub_dir="${method}"
     fi
 
     # Create subdirectory with profile prefix
     mkdir -p "$PROJECT_ROOT/results/${profile}/${sub_dir}"
 
     # Build output filename
-    if [ "$mode" == "default" ]; then
+    if [ "$method" == "adaptive" ] || [ "$method" == "fixed" ]; then
         out_path="$PROJECT_ROOT/results/${profile}/${sub_dir}/2L5V_2L5V_${value}.csv"
         if [ "$FORCE_WRITE" = true ] && [ -f "$out_path" ]; then
             echo "Overwriting existing results: $out_path"
@@ -99,13 +112,12 @@ for args in "${experiments[@]}"; do
             echo "Skipping existing results: $out_path"
             continue
         fi
-        echo "Running ${profile} ${mode} ${method} with value=${value} filter=${filter} -> $out_path"
+        echo "Running ${profile} ${method} with value=${value} filter=${filter} -> $out_path"
         python "$SCRIPT_DIR/test.py" \
             --profile "$profile" \
-            --mode "$mode" \
             --method "$method" \
             --value "$value" \
-            --filter \
+            "$filter_arg" \
             --experiments "$NUM_EXPERIMENTS" \
             --episodes "$NUM_EPISODES" \
             --output "$out_path"
@@ -117,24 +129,14 @@ for args in "${experiments[@]}"; do
             echo "Skipping existing results: $out_path"
             continue
         fi
-        echo "Running ${profile} ${mode} filter=${filter} -> $out_path"
-        if [ "$filter" == "true" ]; then
-            python "$SCRIPT_DIR/test.py" \
-                --profile "$profile" \
-                --mode "$mode" \
-                --filter \
-                --experiments "$NUM_EXPERIMENTS" \
-                --episodes "$NUM_EPISODES" \
-                --output "$out_path"
-        else
-            python "$SCRIPT_DIR/test.py" \
-                --profile "$profile" \
-                --mode "$mode" \
-                --no-filter \
-                --experiments "$NUM_EXPERIMENTS" \
-                --episodes "$NUM_EPISODES" \
-                --output "$out_path"
-        fi
+        echo "Running ${profile} ${method} filter=${filter} -> $out_path"
+        python "$SCRIPT_DIR/test.py" \
+            --profile "$profile" \
+            --method "$method" \
+            "$filter_arg" \
+            --experiments "$NUM_EXPERIMENTS" \
+            --episodes "$NUM_EPISODES" \
+            --output "$out_path"
     fi
 done
 
