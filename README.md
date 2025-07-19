@@ -1,4 +1,4 @@
-# Normative Supervision for Behavior Preferencing in Reinforcement Learning
+# Constrained Policy Shaping for Deployment-Phase Behavior Preferencing
 
 This project implements a normative supervisor which augments the actions of a pretrained DQN agent to enforce driving norms and safety constraints. The agent is trained and tested in the [HighwayEnv](https://github.com/Farama-Foundation/HighwayEnv/tree/master) simulation environment using the configurations under the `configs/` directory.
 
