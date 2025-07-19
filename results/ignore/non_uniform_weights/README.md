@@ -1,0 +1,1 @@
+This was an experiment with non-uniform norm weights. All norms were weighted 5, except speed and lane keeping were weighted 3. Keeping it for now, but the uniform results are better and more principled, since the weight selection was somewhat arbitrary.

@@ -8,38 +8,30 @@ import sys
 from collections import defaultdict
 
 import gymnasium
+import torch
 from stable_baselines3 import DQN
 from highway_env.envs.highway_env import HighwayEnv
 
-from norm_supervisor.supervisor import Supervisor, SupervisorMode, SupervisorMethod
-import norm_supervisor.norms.norms as norms
+from norm_supervisor.consts import VEHICLE_LENGTH
+from norm_supervisor.norms.norms import TailgatingNorm
+from norm_supervisor.supervisor import Supervisor, PolicyAugmentMethod
 import norm_supervisor.metrics as metrics
 
 # Configuration mappings
 CONFIGS = {
-    '2L5V': {
-        'model_file': 'trained_30_duration_2_lanes_5_vehicles.zip',
-        'env_config': 'train_30_duration_2_lanes_5_vehicles.json',
-        'lanes': 2
-    },
-    '4L20V': {
-        'model_file': 'trained_30_duration_4_lanes_20_vehicles.zip',
-        'env_config': 'train_30_duration_4_lanes_20_vehicles.json',
-        'lanes': 4
+    'default': {
+        'model_file': '2_lanes_5_vehicles.zip',
+        'env_config': '2_lanes_5_vehicles.json',
+        'lanes': 2,
+        'policy_freq': 1
     }
 }
 
-MODE_MAPPING = {
-    'unsupervised': SupervisorMode.NOP,
-    'filter_only': SupervisorMode.FILTER_ONLY,
-    'naive_augment': SupervisorMode.NAIVE_AUGMENT,
-    'default': SupervisorMode.DEFAULT
-}
-
 METHOD_MAPPING = {
-    'adaptive': SupervisorMethod.ADAPTIVE,
-    'fixed': SupervisorMethod.FIXED,
-    'nop': SupervisorMethod.NOP
+    'nop': PolicyAugmentMethod.NOP,
+    'naive': PolicyAugmentMethod.NAIVE,
+    'adaptive': PolicyAugmentMethod.ADAPTIVE,
+    'fixed': PolicyAugmentMethod.FIXED
 }
 
 BASE_SEED = 239
@@ -50,33 +42,29 @@ class ExperimentConfig:
     
     def __init__(self, args: argparse.Namespace):
         self.profile = args.profile
-        self.mode = args.mode
         self.method = args.method
         self.value = args.value
-        self.model_config = args.model
-        self.env_config = args.env
         self.num_experiments = args.experiments
         self.num_episodes = args.episodes
         self.output_file = args.output
+        self.filter = args.filter
+        self.model_env = CONFIGS['default'] # TODO: Support additional model-env configs
         
         # Validate configuration
         self._validate()
     
     def _validate(self):
         """Validate the experiment configuration."""
-        if self.mode == 'default':
-            if not self.method:
-                raise ValueError("--method is required when --mode is 'default'")
-            if self.method in ['adaptive', 'fixed'] and not self.value:
-                raise ValueError("--value is required for adaptive/fixed methods")
+        if self.method in ['adaptive', 'fixed'] and self.value is None:
+            raise ValueError("--value is required for adaptive/fixed methods")
         
         # Check if model file exists
-        model_path = os.path.join("models", CONFIGS[self.model_config]['model_file'])
+        model_path = os.path.join("models", self.model_env['model_file'])
         if not os.path.exists(model_path):
             raise ValueError(f"Model file not found: {model_path}")
         
         # Check if environment config exists
-        env_config_path = os.path.join("configs/environment", CONFIGS[self.env_config]['env_config'])
+        env_config_path = os.path.join("configs/environment", self.model_env['env_config'])
         if not os.path.exists(env_config_path):
             raise ValueError(f"Environment config not found: {env_config_path}")
 
@@ -88,20 +76,16 @@ class EpisodeMetrics:
         self.episode_length = 0
         self.collision = False
         self.ttc_history = []
-        self.following_distances = []
-        self.speeds = []
+        self.distance_history = []
+        self.speed_history = []
 
-        self.lane_times = {f'lane_{i}': 0 for i in range(lane_count)}
+        self.lane_times = {f'lane_{i}': 0.0 for i in range(lane_count)}
         
         self.norm_violations            = defaultdict(int)
         self.constraint_violations      = defaultdict(int)
-        self.norm_violation_rates       = defaultdict(float) # Per time step violation rate
-        self.constraint_violation_rates = defaultdict(float) # Per time step violation rate
         
-        self.cost              = 0.0 # Weighted norm violation cost
-        self.avoided_cost      = 0.0 # Avoided weighted norm violation cost
-        self.cost_rate         = 0.0 # Weighted norm violation cost per timestep
-        self.avoided_cost_rate = 0.0 # Avoided weighted norm violation cost per timestep
+        self.cost         = 0.0 # Weighted norm violation cost
+        self.avoided_cost = 0.0 # Avoided weighted norm violation cost
     
     def add_timestep(self, ttc: float, following_distance: float, speed: float, lane_index: int,
                      norm_violations: dict[str, bool], constraint_violations: dict[str, bool],
@@ -109,8 +93,8 @@ class EpisodeMetrics:
         """Add data from a single timestep."""
         self.episode_length += 1
         self.ttc_history.append(ttc)
-        self.following_distances.append(following_distance)
-        self.speeds.append(speed)
+        self.distance_history.append(following_distance)
+        self.speed_history.append(speed)
         self.lane_times[f'lane_{lane_index}'] += 1
         
         for norm, flag in norm_violations.items():
@@ -127,27 +111,6 @@ class EpisodeMetrics:
         if not data or all(np.isnan(x) for x in data):
             return np.nan
         return np.nanmean(data)
-    
-    def finalize(self):
-        """Calculate final metrics for the episode."""
-        self.mean_ttc = self._safe_nanmean(self.ttc_history)
-        self.mean_following_distance = self._safe_nanmean(self.following_distances)
-        self.mean_speed = self._safe_nanmean(self.speeds)
-        
-        # Normalize rates by episode length
-        if self.episode_length > 0:
-            self.cost_rate = self.cost / self.episode_length
-            self.avoided_cost_rate = self.avoided_cost / self.episode_length
-            
-            for lane, time in self.lane_times.items():
-                self.lane_times[lane] = time / self.episode_length
-
-            for norm in self.norm_violations:
-                self.norm_violation_rates[norm] = self.norm_violations[norm] / self.episode_length
-            
-            for constraint in self.constraint_violations:
-                self.constraint_violation_rates[constraint] \
-                    = self.constraint_violations[constraint] / self.episode_length
 
 
 class ExperimentResults:
@@ -156,75 +119,97 @@ class ExperimentResults:
     def __init__(self, experiment_id: int, config: ExperimentConfig):
         self.experiment_id = experiment_id
         self.config = config
-        self.episode_metrics = []
+        self.episode_metrics: list[EpisodeMetrics] = []
     
     def add_episode(self, metrics: EpisodeMetrics):
         """Add metrics from a completed episode."""
         self.episode_metrics.append(metrics)
     
-    def get_experiment_means(self) -> dict[str, float]:
+    def get_experiment_results(self) -> dict[str, float]:
         """Calculate mean values across all episodes in this experiment."""
         if not self.episode_metrics:
             return {}
         
-        # Calculate means
-        episode_lengths = [ep.episode_length for ep in self.episode_metrics]
-        collision_count = sum(1 for ep in self.episode_metrics if ep.collision)
-        mean_ttcs = [ep.mean_ttc for ep in self.episode_metrics if not np.isnan(ep.mean_ttc)]
-        mean_following_distances = [ep.mean_following_distance for ep in self.episode_metrics
-                                    if not np.isnan(ep.mean_following_distance)]
-        mean_speeds = [ep.mean_speed for ep in self.episode_metrics if not np.isnan(ep.mean_speed)]
-
-        # Aggregate lane times
-        lane_count = CONFIGS[self.config.env_config]['lanes']
-        all_lane_times = defaultdict(list)
+        # Aggregate episode data
+        episode_lengths = []
+        total_collisions = 0
+        all_ttc_history, all_distance_history, all_speed_history = [], [], []
+        all_lane_times = defaultdict(float)
+        all_norm_violations = defaultdict(int)
+        all_constraint_violations = defaultdict(int)
+        total_cost, total_avoided_cost = 0.0, 0.0
         for ep in self.episode_metrics:
+            episode_lengths.append(ep.episode_length)
+            total_collisions += ep.collision
+            all_ttc_history.extend(ep.ttc_history)
+            all_distance_history.extend(ep.distance_history)
+            all_speed_history.extend(ep.speed_history)
             for lane, time in ep.lane_times.items():
-                all_lane_times[lane].append(time)
-        
-        # Aggregate norm violations
-        all_norm_violation_rates = defaultdict(list)
-        for ep in self.episode_metrics:
-            for norm, count in ep.norm_violation_rates.items():
-                all_norm_violation_rates[norm].append(count)
+                all_lane_times[lane] += time
+            for norm, count in ep.norm_violations.items():
+                all_norm_violations[norm] += count
+            for constraint, count in ep.constraint_violations.items():
+                all_constraint_violations[constraint] += count
+            total_cost += ep.cost
+            total_avoided_cost += ep.avoided_cost
 
-        # Aggregate constraint violations
-        all_constraint_violation_rates = defaultdict(list)
-        for ep in self.episode_metrics:
-            for constraint, count in ep.constraint_violation_rates.items():
-                all_constraint_violation_rates[constraint].append(count)
-        
-        # Aggregate constraint violations
-        cost_rates = [ep.cost_rate for ep in self.episode_metrics]
-        avoided_cost_rates = [ep.avoided_cost_rate for ep in self.episode_metrics]
-        
+        # Sum episode times for normalization
+        total_time = sum(episode_lengths)
+
+        # Calculate time exposed TTC and following distance
+        sample_freq = self.config.model_env['policy_freq']
+        tet_1s = metrics.calculate_exposure(all_ttc_history, sample_freq, 1) / total_time
+        tet_2s = metrics.calculate_exposure(all_ttc_history, sample_freq, 2) / total_time
+        tet_3s = metrics.calculate_exposure(all_ttc_history, sample_freq, 3) / total_time
+        teud_1v = metrics.calculate_exposure(all_distance_history, sample_freq, 1 * VEHICLE_LENGTH) / total_time
+        teud_2v = metrics.calculate_exposure(all_distance_history, sample_freq, 2 * VEHICLE_LENGTH) / total_time
+        teud_3v = metrics.calculate_exposure(all_distance_history, sample_freq, 3 * VEHICLE_LENGTH) / total_time
+
+        # Normalize lane preferences, violation rates, and cost rates
+        lane_preferences, norm_violation_rates, constraint_violation_rates = {}, {}, {}
+        for lane, time in all_lane_times.items():
+            lane_preferences[lane] = time / total_time
+        for norm, count in all_norm_violations.items():
+            norm_violation_rates[norm] = count / total_time
+        for constraint, count in all_constraint_violations.items():
+            constraint_violation_rates[constraint] = count / total_time
+        cost_rate = total_cost / total_time
+        avoided_cost_rate = total_avoided_cost / total_time
+
         # Build base results
         results = {
             'experiment_id': self.experiment_id,
+            'policy_freq': self.config.model_env['policy_freq'],
             'profile': self.config.profile,
-            'mode': self.config.mode,
-            'method': self.config.method or '',
-            'value': float(self.config.value) if self.config.value is not None else 0.0,
+            'method': self.config.method,
+            'value': float(self.config.value) if self.config.value is not None else np.nan,
             'num_episodes': len(self.episode_metrics),
-            'episode_length_mean': np.mean(episode_lengths),
-            'collision_count': collision_count,
-            'mean_ttc': np.nanmean(mean_ttcs) if mean_ttcs else np.nan,
-            'mean_following_distance': np.nanmean(mean_following_distances) if mean_following_distances else np.nan,
-            'mean_speed': np.nanmean(mean_speeds) if mean_speeds else np.nan,
-            'speed_violations_rate_mean': np.mean(all_norm_violation_rates.get('Speeding', [0])),
-            'tailgating_violations_rate_mean': np.mean(all_norm_violation_rates.get('Tailgating', [0])),
-            'braking_violations_rate_mean': np.mean(all_norm_violation_rates.get('Braking', [0])),
-            'lane_change_tailgating_violations_rate_mean': np.mean(all_norm_violation_rates.get('LaneChangeTailgating', [0])),
-            'lane_change_braking_violations_rate_mean': np.mean(all_norm_violation_rates.get('LaneChangeBraking', [0])),
-            'collision_violations_rate_mean': np.mean(all_constraint_violation_rates.get('Collision', [0])),
-            'lane_change_collision_violations_rate_mean': np.mean(all_constraint_violation_rates.get('LaneChangeCollision', [0])),
-            'cost_rate_mean': np.mean(cost_rates),
-            'avoided_cost_rate_mean': np.mean(avoided_cost_rates),
+            'mean_episode_length': np.mean(episode_lengths),
+            'total_collisions': total_collisions,
+            'tet_1s': tet_1s,
+            'tet_2s': tet_2s,
+            'tet_3s': tet_3s,
+            'teud_1v': teud_1v,
+            'teud_2v': teud_2v,
+            'teud_3v': teud_3v,
+            'mean_speed': np.mean(all_speed_history),
+            'speed_violation_rate': norm_violation_rates.get('SpeedNorm', np.nan),
+            'tailgating_violation_rate': norm_violation_rates.get('TailgatingNorm', np.nan),
+            'braking_violation_rate': norm_violation_rates.get('BrakingNorm', np.nan),
+            'lane_keeping_violation_rate': norm_violation_rates.get('LaneKeepingNorm', np.nan),
+            'lane_change_tailgating_violation_rate': norm_violation_rates.get('LaneChangeTailgatingNorm', np.nan),
+            'lane_change_braking_violation_rate': norm_violation_rates.get('LaneChangeBrakingNorm', np.nan),
+            'collision_violation_rate': constraint_violation_rates.get('CollisionConstraint', np.nan),
+            'lane_change_collision_violation_rate': constraint_violation_rates.get('LaneChangeCollisionConstraint', np.nan),
+            'safety_envelope_violation_rate': constraint_violation_rates.get('SafetyEnvelopeConstraint', np.nan),
+            'lane_change_safety_envelope_violation_rate': constraint_violation_rates.get('LaneChangeSafetyEnvelopeConstraint', np.nan),
+            'cost_rate': cost_rate,
+            'avoided_cost_rate': avoided_cost_rate,
         }
         
-        # Add lane times based on actual lane count
-        for i in range(lane_count):
-            results[f'lane_{i}_time_mean'] = np.mean(all_lane_times.get(f'lane_{i}', [0]))
+        # Add lane preferences based on actual lane count
+        for i in range(self.config.model_env['lanes']):
+            results[f'lane_{i}_preference'] = lane_preferences.get(f'lane_{i}', 0.0)
         
         return results
 
@@ -241,21 +226,21 @@ class CSVWriter:
     def _get_fieldnames(self) -> list[str]:
         """Get CSV field names based on lane count."""
         base_fields = [
-            'experiment_id', 'profile', 'mode', 'method', 'value',
-            'num_episodes', 'episode_length_mean', 'collision_count', 'mean_ttc',
-            'mean_following_distance', 'mean_speed'
+            'experiment_id', 'policy_freq', 'profile', 'method', 'value', 'num_episodes',
+            'mean_episode_length', 'total_collisions', 'tet_1s', 'tet_2s', 'tet_3s', 'teud_1v',
+            'teud_2v', 'teud_3v', 'mean_speed'
         ]
         
         # Add lane fields
-        lane_fields = [f'lane_{i}_time_mean' for i in range(self.lane_count)]
+        lane_fields = [f'lane_{i}_preference' for i in range(self.lane_count)]
         
         # Add violation fields
         violation_fields = [
-            'speed_violations_rate_mean', 'tailgating_violations_rate_mean',
-            'braking_violations_rate_mean', 'lane_change_tailgating_violations_rate_mean',
-            'lane_change_braking_violations_rate_mean', 'collision_violations_rate_mean',
-            'lane_change_collision_violations_rate_mean', 'cost_rate_mean',
-            'avoided_cost_rate_mean'
+            'speed_violation_rate', 'tailgating_violation_rate',  'braking_violation_rate',
+            'lane_keeping_violation_rate', 'lane_change_tailgating_violation_rate',
+            'lane_change_braking_violation_rate', 'collision_violation_rate',
+            'lane_change_collision_violation_rate', 'safety_envelope_violation_rate',
+            'lane_change_safety_envelope_violation_rate', 'cost_rate', 'avoided_cost_rate'
         ]
         
         return base_fields + lane_fields + violation_fields
@@ -263,6 +248,8 @@ class CSVWriter:
     def _create_file(self):
         """Create the CSV file with headers."""
         try:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
             with open(self.output_file, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
@@ -284,7 +271,7 @@ class ExperimentRunner:
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
-        self.lane_count = CONFIGS[config.env_config]['lanes']
+        self.lane_count = self.config.model_env['lanes']
         self.csv_writer = CSVWriter(config.output_file, self.lane_count)
         
         # Load model and environment config
@@ -293,36 +280,33 @@ class ExperimentRunner:
     
     def _load_model(self) -> DQN:
         """Load the DQN model."""
-        model_path = os.path.join("models", CONFIGS[self.config.model_config]['model_file'])
+        # Check if CUDA is available and set device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {device}")
+        
+        model_path = os.path.join("models", self.config.model_env['model_file'])
         print(f"Loading model from {model_path}...")
-        model = DQN.load(model_path)
+        model = DQN.load(model_path, device=device)
         model.set_random_seed(BASE_SEED)
         return model
     
     def _load_env_config(self) -> dict:
         """Load environment configuration."""
-        env_config_path = os.path.join("configs/environment", CONFIGS[self.config.env_config]['env_config'])
+        env_config_path = os.path.join("configs/environment", self.config.model_env['env_config'])
         print(f"Loading environment config from {env_config_path}...")
         with open(env_config_path, 'r') as f:
             return json.load(f)
     
     def _create_supervisor(self, env: HighwayEnv) -> Supervisor:
         """Create supervisor with appropriate configuration."""
-        if self.config.mode == 'default':
-            supervisor_mode = MODE_MAPPING[self.config.mode].value
-            supervisor_method = METHOD_MAPPING[self.config.method].value
-            fixed_beta = self.config.value if self.config.method == 'fixed' else None
-            kl_budget = self.config.value if self.config.method == 'adaptive' else None
-        else:
-            supervisor_mode = MODE_MAPPING[self.config.mode].value
-            supervisor_method = SupervisorMethod.NOP.value
-            fixed_beta = None
-            kl_budget = None
+        supervisor_method = METHOD_MAPPING[self.config.method].value
+        fixed_beta = self.config.value if self.config.method == 'fixed' else None
+        kl_budget = self.config.value if self.config.method == 'adaptive' else None
         
         return Supervisor(
             env=env,
             profile_name=self.config.profile,
-            mode=supervisor_mode,
+            filter=self.config.filter,
             method=supervisor_method,
             fixed_beta=fixed_beta,
             kl_budget=kl_budget,
@@ -354,9 +338,6 @@ class ExperimentRunner:
             # Create metrics collector for this episode
             episode_metrics = EpisodeMetrics(self.lane_count)
             
-            # Create tailgating norm for following distance calculation
-            tailgating_norm = norms.TailgatingNorm(weight=None, safe_distance=None)
-            
             done = truncated = False
             while not (done or truncated):
                 # Get model action
@@ -372,7 +353,7 @@ class ExperimentRunner:
                 constraint_violations_dict = supervisor.count_constraint_violations(action)
                 
                 # Apply supervisor if needed
-                if self.config.mode != 'unsupervised':
+                if self.config.method != 'nop' or self.config.filter:
                     new_action = supervisor.decide_action(self.model, obs)
                     new_violations_dict = supervisor.count_norm_violations(new_action)
                     new_violations_weight_dict = supervisor.weight_norm_violations(new_violations_dict)
@@ -394,7 +375,7 @@ class ExperimentRunner:
                 # Calculate metrics
                 ttcs = metrics.calculate_neighbour_ttcs(env_unwrapped.vehicle)
                 ttc = ttcs[0] if ttcs[0] != np.inf else np.nan
-                following_distance = tailgating_norm.evaluate_criterion(env_unwrapped.vehicle)
+                following_distance = TailgatingNorm.evaluate_criterion(env_unwrapped.vehicle)
                 following_distance = following_distance if following_distance != np.inf else np.nan
                 speed = env_unwrapped.vehicle.speed
                 _, _, lane_index = env_unwrapped.vehicle.lane_index
@@ -417,10 +398,10 @@ class ExperimentRunner:
                 # Check for collision
                 if done or truncated:
                     if info.get("crashed", False):
+                        print(f"*** CRASHED WITH SEED {episode_seed} ***")
                         episode_metrics.collision = True
             
             # Finalize episode metrics
-            episode_metrics.finalize()
             results.add_episode(episode_metrics)
             
             # Print progress every 10 episodes
@@ -434,34 +415,33 @@ class ExperimentRunner:
         """Run all experiments and write results incrementally."""
         print(f"Starting experimental run:")
         print(f"  Profile: {self.config.profile}")
-        print(f"  Mode: {self.config.mode}")
-        print(f"  Method: {self.config.method or 'N/A'}")
+        print(f"  Method: {self.config.method}")
         print(f"  Value: {self.config.value or 'N/A'}")
-        print(f"  Model: {self.config.model_config}")
-        print(f"  Environment: {self.config.env_config}")
+        print(f"  Model: {self.config.model_env['model_file']}")
+        print(f"  Environment: {self.config.model_env['env_config']}")
         print(f"  Experiments: {self.config.num_experiments}")
         print(f"  Episodes per experiment: {self.config.num_episodes}")
         print(f"  Output: {self.config.output_file}")
         
+        # Use the output file path as provided by the shell script
+        # The shell script already creates the proper directory structure
+        print(f"Results will be written to: {self.config.output_file}")
+        
         for experiment_id in range(self.config.num_experiments):
             try:
                 results = self.run_experiment(experiment_id)
-                experiment_means = results.get_experiment_means()
-                self.csv_writer.write_experiment(experiment_means)
-                
+                experiment_results = results.get_experiment_results()
+                self.csv_writer.write_experiment(experiment_results)
                 print(f"Experiment {experiment_id + 1} completed:")
-                print(f"  Collisions: {experiment_means['collision_count']}")
-                print(f"  Mean TTC: {experiment_means['mean_ttc']:.3f}")
-                print(f"  Mean speed: {experiment_means['mean_speed']:.2f} m/s")
-                
+                print(f"  Collisions: {experiment_results['total_collisions']}")
+                print(f"  Cost Rate: {experiment_results['cost_rate']:.3f}")
             except Exception as e:
                 import traceback
                 print(f"Error in experiment {experiment_id + 1}: {e}")
                 print(f"Full traceback:")
                 traceback.print_exc()
                 raise
-        
-        print(f"\nAll experiments completed. Results written to {self.config.output_file}")
+        print(f"\nAll experiments completed. Results written to {self.csv_writer.output_file}")
 
 
 def parse_arguments():
@@ -473,31 +453,27 @@ def parse_arguments():
     
     parser.add_argument('--profile', choices=['cautious', 'efficient'], required=True,
                        help='Driving profile to use')
-    parser.add_argument('--mode', choices=['unsupervised', 'filter_only', 'naive_augment', 'default'], 
-                       required=True, help='Supervisor mode')
-    parser.add_argument('--method', choices=['adaptive', 'fixed'], 
-                       help='Supervisor method (required for default mode)')
+    parser.add_argument('--method', choices=['nop', 'naive', 'adaptive', 'fixed'], 
+                       required=True, help='Supervisor method')
     parser.add_argument('--value', type=float, 
-                       help='Value for adaptive/fixed methods (required for default mode)')
-    parser.add_argument('--model', choices=['2L5V', '4L20V'], required=True,
-                       help='Model configuration')
-    parser.add_argument('--env', choices=['2L5V', '4L20V'], required=True,
-                       help='Environment configuration')
+                       help='Value for adaptive/fixed methods (required for adaptive/fixed methods)')
     parser.add_argument('--experiments', type=int, default=5,
                        help='Number of experiments to run')
     parser.add_argument('--episodes', type=int, default=100,
                        help='Number of episodes per experiment')
     parser.add_argument('--output', required=True,
                        help='Output CSV file path')
+    parser.add_argument('--filter', dest='filter', action='store_true',
+                       help='Enable supervisor filtering (default: True)')
+    parser.add_argument('--no-filter', dest='filter', action='store_false',
+                       help='Disable supervisor filtering')
+    parser.set_defaults(filter=True)
     
     args = parser.parse_args()
     
-    # Validate method and value for default mode
-    if args.mode == 'default':
-        if not args.method:
-            parser.error("--method is required when --mode is 'default'")
-        if args.method in ['adaptive', 'fixed'] and not args.value:
-            parser.error("--value is required for adaptive/fixed methods")
+    # Validate method and value for adaptive/fixed methods
+    if args.method in ['adaptive', 'fixed'] and args.value is None:
+        parser.error("--value is required for adaptive/fixed methods")
     
     return args
 

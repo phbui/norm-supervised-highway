@@ -1,4 +1,6 @@
+from collections import defaultdict
 from enum import Enum
+from typing import Optional
 from scipy.optimize import brentq
 from scipy.stats import entropy
 import numpy as np
@@ -18,17 +20,12 @@ from norm_supervisor.norms.profiles.efficient import EfficientDrivingProfile
 
 # Type alias for 1D array of floating points
 FloatArray1D = npt.NDArray[np.float64]
+IntArray1D = npt.NDArray[np.int32]
 
-class SupervisorMode(Enum):
-    """Enum for supervisor modes."""
-    NOP           = 'nop'           # No supervisor applied.
-    FILTER_ONLY   = 'filter_only'   # Only filter out impermissible actions
-    NAIVE_AUGMENT = 'naive_augment' # Use naive update rule to augment the policy
-    DEFAULT       = 'default'       # Filter and augment the policy to minimize norm violation cost
-
-class SupervisorMethod(Enum):
+class PolicyAugmentMethod(Enum):
     """Enum for supervisor methods."""
     NOP      = 'nop'      # No KL-divergence method applied.
+    NAIVE    = 'naive'    # Naive augment rule
     FIXED    = 'fixed'    # Use a fixed beta value
     ADAPTIVE = 'adaptive' # Adaptively calculate beta based on KL budget
 
@@ -44,21 +41,21 @@ class Supervisor:
         self,
         env: HighwayEnv,
         profile_name: str,
-        mode: str = SupervisorMode.DEFAULT.value,
-        method: str = SupervisorMethod.ADAPTIVE.value,
-        fixed_beta: float = 0.01,
-        kl_budget: float = 0.005,
-        eta_max: float = 10.0,
-        eta_min: float = -10.0,
-        tol: float = 1e-4,
+        filter: bool = True,
+        method: str = PolicyAugmentMethod.ADAPTIVE.value,
+        fixed_beta: Optional[float] = 1.0,
+        kl_budget: Optional[float] = 0.01,
+        eta_max: Optional[float] = 10.0,
+        eta_min: Optional[float] = -10.0,
+        tol: Optional[float] = 1e-4,
         verbose=False
     ) -> None:
         """Initialize the supervisor with the environment and configuration.
 
         :param env: the unwrapped HighwayEnv environment.
         :profile_name: the name of the norm profile to use for the supervisor.
-        :param mode: the mode of the supervisor ('filter_only', 'naive_augment', 'default').
-        :param method: the method for computing the supervisory policy ('fixed', 'adaptive').
+        :filter: whether to filter the model policy on hard constraints.
+        :param method: the method for policy augmentation ('fixed', 'adaptive', 'naive', 'nop').
         :param fixed_beta: fixed beta value for the supervisory policy.
             This value is only used for the FIXED method.
         :param kl_budget: maximum KL-divergence for the supervisory policy.
@@ -71,38 +68,48 @@ class Supervisor:
             This value is only used for the ADPATIVE method.
         :param verbose: whether to print debug information.
             This value is only used for the ADPATIVE method.
-        """       
-        self.env = env
-        
+        """
+        # Ensure proper enum types can be constructed from string parameters  
         try:
             self.profile_name = profile_name.lower()
             self.profile: AbstractNormProfile = self.PROFILES[self.profile_name]()
         except KeyError:
             raise ValueError(f"Invalid profile: {profile_name}. Expected one of "
                              f"{[p for p in self.PROFILES.keys()]}")
-
         try:
-            self.mode = SupervisorMode(mode.lower())
-        except ValueError:
-            raise ValueError(f"Invalid mode: {mode}. Expected one of "
-                             f"{[m.value for m in SupervisorMode]}")
-
-        try:
-            self.method = SupervisorMethod(method.lower())
+            self.method = PolicyAugmentMethod(method.lower())
         except ValueError:
             raise ValueError(f"Invalid method: {method}. Expected one of "
-                             f"{[m.value for m in SupervisorMethod]}")
+                             f"{[m.value for m in PolicyAugmentMethod]}")
         
-        if self.mode == SupervisorMode.DEFAULT and self.method == SupervisorMethod.NOP:
-            raise ValueError("Cannot use NOP method with DEFAULT mode! "
-                             "Please select a valid method or switch to a different mode.")
+        # Ensure internal consistency of specified parameters
+        if self.method == PolicyAugmentMethod.FIXED and fixed_beta is None:
+            raise ValueError("fixed_beta must be provided for the 'fixed' method!")
+        
+        if self.method == PolicyAugmentMethod.ADAPTIVE and any(
+            param is None for param in [kl_budget, eta_max, eta_min, tol]
+        ):
+            raise ValueError("kl_budget, eta_max, eta_min, and tol must be provided for the "
+                             "'adaptive' method!")
+        
+        # Check for value ranges
+        if self.method == PolicyAugmentMethod.ADAPTIVE and kl_budget <= 0:
+            raise ValueError("kl_budget must be greater than zero for the 'adaptive' method!")
 
-        self.fixed_beta    = fixed_beta
-        self.kl_budget     = kl_budget
-        self.eta_max       = eta_max
-        self.eta_min       = eta_min
-        self.tol           = tol
-        self.verbose       = verbose
+        if self.method == PolicyAugmentMethod.ADAPTIVE and tol <= 0:
+            raise ValueError("tol must be greater than zero for the 'adaptive' method!")
+        
+        if self.method == PolicyAugmentMethod.FIXED and fixed_beta <= 0:
+            raise ValueError("fixed_beta must be greater than zero for the 'adaptive' method!") 
+
+        self.env        = env
+        self.filter     = filter
+        self.fixed_beta = fixed_beta
+        self.kl_budget  = kl_budget
+        self.eta_max    = eta_max
+        self.eta_min    = eta_min
+        self.tol        = tol
+        self.verbose    = verbose
 
         self.reset_norms()
 
@@ -136,13 +143,14 @@ class Supervisor:
         for constraint in self.contraints:
             if constraint.is_violating_action(self.env.vehicle, action):
                 violations_dict[str(constraint)] = True
+
         return violations_dict
 
     def weight_norm_violations(self, violations_count: dict[str, bool]) -> dict[str, int]:
         """Return a dictionary of weighted norm costs given a dictionary of norm violations."""
         return {norm: violations_count[norm] * self.norm_weights[norm] for norm in violations_count}
     
-    def get_norm_violation_cost(self) -> FloatArray1D:
+    def get_norm_violation_cost(self) -> IntArray1D:
         """Return the norm violation cost vector for the current state."""
         norm_violation_cost = np.zeros(len(self.ACTIONS_ALL))
         for action in self.ACTIONS_ALL.keys():
@@ -181,6 +189,11 @@ class Supervisor:
             if self.verbose:
                 print("All actions are impermissible! Returning original policy.")
             return policy
+        if all(permissible_mask):
+            if self.verbose:
+                print("All actions are permissible! Returning original policy.")
+            return policy
+
         policy_permissible = policy[permissible_mask]
         policy_permissible /= np.sum(policy_permissible)
         policy_filtered = np.full_like(policy, 0.0)
@@ -214,9 +227,9 @@ class Supervisor:
     def _augment_policy(self, policy: FloatArray1D) -> FloatArray1D:
         """Augment the given policy to minimizes the expected norm violation cost.
 
-        The augmented policy minimizes the expected norm violation cost subject to a constraint on
-        the KL-divergence from the original policy. When there are infinite solutions, the policy
-        with the smallest KL-divergence is selected.
+        The augmented policy is computed using either the 'fixed' or 'adaptive' method. When in
+        'fixed' mode, the provided value for beta is used to compute the new policy. When in
+        'adaptive' mode, the value for beta is computed to satisfy the KL-divergence constraint.
         """
         support_mask = ~np.isclose(policy, 0.0)
         policy_support = policy[support_mask]
@@ -239,7 +252,7 @@ class Supervisor:
 
         # Optimization: Check if the cost-optimal policy already satisfies the KL constraint
         # NOTE: This only applies to the ADAPTIVE method, since it relies on a KL budget
-        if self.method == SupervisorMethod.ADAPTIVE:
+        if self.method == PolicyAugmentMethod.ADAPTIVE:
             min_cost_mask = np.isclose(cost_support, np.min(cost_support))
             pi_cost_support = np.zeros_like(policy_support)
             pi_cost_support[min_cost_mask] = 1.0 / np.sum(min_cost_mask)
@@ -265,10 +278,10 @@ class Supervisor:
         normalized_cost_support = cost_support / np.sum(cost_support)
 
         # Used fixed beta provided by the user
-        if self.method == SupervisorMethod.FIXED:
+        if self.method == PolicyAugmentMethod.FIXED:
             eta_star = np.log(self.fixed_beta)
         # Or solve for eta=log(beta) using Brent's root-finding algorithm
-        elif self.method == SupervisorMethod.ADAPTIVE:
+        elif self.method == PolicyAugmentMethod.ADAPTIVE:
             def kl_gap(eta: float) -> float:
                 """Return the difference between the KL-divergence induced by eta and the budget."""
                 updated_policy_support \
@@ -339,23 +352,22 @@ class Supervisor:
         :param obs: observation from the environment.
         :return: final action selection.
         """ 
-        model_policy = self._get_model_policy(model, obs)
-        if self.mode == SupervisorMode.NOP:
-            # Baseline method, no supervisor applied
-            if self.verbose:
-                print("No supervisor applied. Using model policy directly.")
-            return model_policy.argmax()
+        policy = self._get_model_policy(model, obs)
 
-        # Filter hard constraints from the model policy
-        policy_filtered = self._filter_policy(model_policy)
-        if self.mode == SupervisorMode.FILTER_ONLY:
-            return policy_filtered.argmax()
+        # Conditionally filter hard constraints from the model policy
+        if self.filter:
+            policy = self._filter_policy(policy)
         
-        # Apply commanded policy augmentation
-        if self.mode == SupervisorMode.NAIVE_AUGMENT:
-            augmented_policy = self._augment_policy_naive(policy_filtered)
-        else: # SupervisorMode.DEFAULT
-            augmented_policy = self._augment_policy(policy_filtered)
+        # Augment the policy based on the supervisor mode
+        if self.method == PolicyAugmentMethod.NOP:
+            augmented_policy = policy
+        elif self.method == PolicyAugmentMethod.NAIVE:
+            augmented_policy = self._augment_policy_naive(policy)
+        elif self.method in [PolicyAugmentMethod.ADAPTIVE, PolicyAugmentMethod.FIXED]:
+            augmented_policy = self._augment_policy(policy)
+        else:
+            raise ValueError(f"Unknown supervisor method: {self.method}")
+        
         return augmented_policy.argmax()
         
     @staticmethod

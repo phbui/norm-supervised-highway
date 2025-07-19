@@ -9,5 +9,5 @@
   "gradient_steps": 1,
   "target_update_interval": 50,
   "total_timesteps": 100000,
-  "tensorboard_log": "highway_dqn/"
+  "tensorboard_log": "models/tensorboard_logs/"
 }

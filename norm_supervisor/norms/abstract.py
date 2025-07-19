@@ -2,27 +2,22 @@ from abc import ABC, abstractmethod
 from highway_env.envs.common.action import Action
 from highway_env.vehicle.kinematics import Vehicle
 
-class AbstractNorm(ABC):
-    """Abstract base class for norms.
+class AbstractConstraint(ABC):
+    """Abstract base class for constraints."""
 
-    Note that these norms may rely on the underlying vehicle model to evaluate violations.
-    """
-    def __init__(self, weight: int, violating_actions: list[Action]) -> None:
-        """Initialize the norm with a weight and a list of potentially violating actions.
+    def __init__(self, violating_actions: list[Action]) -> None:
+        """Initialize the constraint with a list of potentially violating actions.
 
-        :param weight: the norm weight, used for prioritization.
-        :param violating_actions: list of potentially norm-violating actions.
+        :param violating_actions: list of potentially constraint-violating actions.
         """
-        if weight is not None and weight < 0:
-            raise ValueError("Norm weight must be non-negative.")
         if not violating_actions:
             raise ValueError("Norm must have at least one violating action.")
 
-        self.weight = weight
         self.violating_actions = violating_actions
 
+    @staticmethod
     @abstractmethod
-    def evaluate_criterion(self, vehicle: Vehicle, *args, **kwargs) -> float:
+    def evaluate_criterion(vehicle: Vehicle, *args, **kwargs) -> any:
         """Evaluate the criterion for the norm constraint.
 
         :param vehicle: the vehicle for which to evaluate the criterion.
@@ -46,3 +41,19 @@ class AbstractNorm(ABC):
     def __str__(self):
         """To string function."""
         pass
+
+class AbstractNorm(AbstractConstraint):
+    """Abstract base class for norms, represented as weighted constraints."""
+
+    def __init__(self, violating_actions: list[Action], weight: int = 1) -> None:
+        """Initialize the norm with a weight and a list of potentially violating actions.
+
+        :param weight: the norm weight, used for prioritization.
+        :param violating_actions: list of potentially norm-violating actions.
+        """
+        super().__init__(violating_actions)
+
+        if weight < 0:
+            raise ValueError("Norm weight must be non-negative.")
+
+        self.weight = weight

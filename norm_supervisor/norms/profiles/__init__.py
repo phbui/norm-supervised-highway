@@ -1,7 +1,7 @@
 """
 Norm Profiles Package
 
-Contains norm profile definitions for different driving behaviors.
+Defines norm profiles to influence the driving behavior preferenced by the norm supervisor.
 """
 
 from .abstract import AbstractNormProfile
