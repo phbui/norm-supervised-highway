@@ -27,15 +27,9 @@ CONFIGS = {
     }
 }
 
-METHOD_MAPPING = {
-    'nop': PolicyAugmentMethod.NOP,
-    'naive': PolicyAugmentMethod.NAIVE,
-    'adaptive': PolicyAugmentMethod.ADAPTIVE,
-    'fixed': PolicyAugmentMethod.FIXED
-}
+METHOD_MAPPING = {method.value : method for method in PolicyAugmentMethod}
 
 BASE_SEED = 239
-
 
 class ExperimentConfig:
     """Configuration for experiment parameters."""
@@ -453,7 +447,7 @@ def parse_arguments():
     
     parser.add_argument('--profile', choices=['cautious', 'efficient'], required=True,
                        help='Driving profile to use')
-    parser.add_argument('--method', choices=['nop', 'naive', 'adaptive', 'fixed'], 
+    parser.add_argument('--method', choices=['nop', 'naive', 'adaptive', 'fixed', 'projection'], 
                        required=True, help='Supervisor method')
     parser.add_argument('--value', type=float, 
                        help='Value for adaptive/fixed methods (required for adaptive/fixed methods)')
