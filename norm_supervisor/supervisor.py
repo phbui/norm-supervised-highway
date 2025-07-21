@@ -17,6 +17,7 @@ from stable_baselines3 import DQN
 from norm_supervisor.norms.profiles.abstract import AbstractNormProfile
 from norm_supervisor.norms.profiles.cautious import CautiousDrivingProfile
 from norm_supervisor.norms.profiles.efficient import EfficientDrivingProfile
+from norm_supervisor.consts import ACTION_STRINGS
 
 # Type alias for 1D array of floating points
 FloatArray1D = npt.NDArray[np.float64]
@@ -124,6 +125,24 @@ class Supervisor:
         self.contraints = self.profile.constraints
         # Create a dictionary mapping norm names to their weights for easy access
         self.norm_weights = {str(norm): norm.weight for norm in self.norms}
+
+    def count_constraint_violations(self, action: Action) -> dict[str, bool]:
+        """Return a dictionary mapping constraints to violation boolean for the given action."""
+        violations_dict = {str(c): False for c in self.contraints}
+        for constraint in self.contraints:
+            if constraint.is_violating_action(self.env.vehicle, action):
+                violations_dict[str(constraint)] = True
+
+        return violations_dict
+    
+    def get_constraint_violation_cost(self) -> IntArray1D:
+        """Return the constraint violation cost vector for the current state."""
+        constraint_violation_cost = np.zeros(len(self.ACTIONS_ALL))
+        for action in self.ACTIONS_ALL.keys():
+            violations_count = self.count_constraint_violations(action)
+            constraint_violation_cost[action] = sum(violations_count.values())
+
+        return constraint_violation_cost
     
     def is_permissible(self, action: Action) -> bool:
         """Checks if an action violates any hard constraints."""
@@ -137,15 +156,6 @@ class Supervisor:
             if norm.is_violating_action(self.env.vehicle, action):
                 violations_dict[str(norm)] = True
         return  violations_dict
-    
-    def count_constraint_violations(self, action: Action) -> dict[str, bool]:
-        """Return a dictionary mapping constraints to violation boolean for the given action."""
-        violations_dict = {str(c): False for c in self.contraints}
-        for constraint in self.contraints:
-            if constraint.is_violating_action(self.env.vehicle, action):
-                violations_dict[str(constraint)] = True
-
-        return violations_dict
 
     def weight_norm_violations(self, violations_count: dict[str, bool]) -> dict[str, int]:
         """Return a dictionary of weighted norm costs given a dictionary of norm violations."""
@@ -178,23 +188,24 @@ class Supervisor:
                 print(f"  {self.ACTIONS_ALL[action]}: {prob:.3f}")
         return action_probs
     
-    def _filter_policy(self, policy: FloatArray1D) -> FloatArray1D:
+    def _filter_policy(self, policy: FloatArray1D) -> Optional[FloatArray1D]:
         """Filter the given policy to only include permissible actions.
         
         This method assigns zero probability to impermissible actions and then renormalizes the
         distribution.
         """
-        permissible_mask = [self.is_permissible(action) for action in self.ACTIONS_ALL]
-        # If all actions are impermissible, return the original policy.
-        if not any(permissible_mask):
-            if self.verbose:
-                print("All actions are impermissible! Returning original policy.")
-            return policy
+        constraint_violation_cost = self.get_constraint_violation_cost()
+        permissible_mask = [cost == 0 for cost in constraint_violation_cost]
         if all(permissible_mask):
             if self.verbose:
                 print("All actions are permissible! Returning original policy.")
             return policy
 
+        # If all actions are impermissible, filter on the minimum constraint cost action set
+        if not any(permissible_mask):
+            cost_min = min(constraint_violation_cost)
+            permissible_mask = [cost == cost_min for cost in constraint_violation_cost]
+        
         policy_permissible = policy[permissible_mask]
         policy_permissible /= np.sum(policy_permissible)
         policy_filtered = np.full_like(policy, 0.0)

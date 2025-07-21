@@ -5,7 +5,7 @@ NUM_EXPERIMENTS=5
 NUM_EPISODES=100
 
 # Set to true to overwrite existing results
-FORCE_WRITE=false
+FORCE_WRITE=true
 
 experiments=(
     # BASELINES
