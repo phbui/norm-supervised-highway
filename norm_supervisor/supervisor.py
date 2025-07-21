@@ -24,10 +24,11 @@ IntArray1D = npt.NDArray[np.int32]
 
 class PolicyAugmentMethod(Enum):
     """Enum for supervisor methods."""
-    NOP      = 'nop'      # No KL-divergence method applied.
-    NAIVE    = 'naive'    # Naive augment rule
-    FIXED    = 'fixed'    # Use a fixed beta value
-    ADAPTIVE = 'adaptive' # Adaptively calculate beta based on KL budget
+    NOP        = 'nop'        # No KL-divergence method applied.
+    NAIVE      = 'naive'      # Naive augment rule
+    FIXED      = 'fixed'      # Use a fixed beta value
+    ADAPTIVE   = 'adaptive'   # Adaptively calculate beta based on KL budget
+    PROJECTION = 'projection' # Project policy onto the minimum cost action space
 
 class Supervisor:
     """Supervisor class for enforcing metrics-driven norms in the HighwayEnv environment."""
@@ -250,16 +251,18 @@ class Supervisor:
                 print(f"All actions are equally norm compliant! No augmentation needed.")
             return policy
 
-        # Optimization: Check if the cost-optimal policy already satisfies the KL constraint
-        # NOTE: This only applies to the ADAPTIVE method, since it relies on a KL budget
-        if self.method == PolicyAugmentMethod.ADAPTIVE:
+        # Compute greedy projection onto the minimum cost action space
+        if self.method in [PolicyAugmentMethod.ADAPTIVE, PolicyAugmentMethod.PROJECTION]:
             min_cost_mask = np.isclose(cost_support, np.min(cost_support))
             pi_cost_support = np.zeros_like(policy_support)
             pi_cost_support[min_cost_mask] = 1.0 / np.sum(min_cost_mask)
             updated_policy_support = policy_support * min_cost_mask
             updated_policy_support /= np.sum(updated_policy_support)
             kl_value = entropy(updated_policy_support, policy_support, nan_policy='raise')
-            if kl_value <= self.kl_budget:
+            # Alwaus return the greedy policy for the PROJECTION method or for the ADAPTIVE method
+            # if the KL budget is satisfied.
+            if (self.method == PolicyAugmentMethod.PROJECTION
+                or (self.method == PolicyAugmentMethod.ADAPTIVE and kl_value <= self.kl_budget)):
                 # Construct updated policy from new support
                 updated_policy = np.full_like(policy, 0.0)
                 updated_policy[support_mask] = updated_policy_support
@@ -363,7 +366,11 @@ class Supervisor:
             augmented_policy = policy
         elif self.method == PolicyAugmentMethod.NAIVE:
             augmented_policy = self._augment_policy_naive(policy)
-        elif self.method in [PolicyAugmentMethod.ADAPTIVE, PolicyAugmentMethod.FIXED]:
+        elif self.method in [
+            PolicyAugmentMethod.ADAPTIVE,
+            PolicyAugmentMethod.FIXED,
+            PolicyAugmentMethod.PROJECTION
+        ]:
             augmented_policy = self._augment_policy(policy)
         else:
             raise ValueError(f"Unknown supervisor method: {self.method}")

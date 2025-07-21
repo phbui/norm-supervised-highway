@@ -35,6 +35,11 @@ experiments=(
     " efficient  fixed        0.10  filter    "
     " efficient  fixed        1.00  filter    "
 
+    # GREEDY
+    # <profile>  <method>  <value>  <filter>
+    " cautious   projection    nan  filter    "
+    " efficient  projection    nan  filter    "
+
     # LOG SPACED TRIALS
     # <profile>  <method>  <value>  <filter>
     " cautious   adaptive   0.0316  filter    "
@@ -58,6 +63,8 @@ experiments=(
     " efficient  fixed        0.01  no-filter "
     " efficient  fixed        0.10  no-filter "
     " efficient  fixed        1.00  no-filter "
+    " cautious   projection    nan  no-filter "
+    " efficient  projection    nan  no-filter "
 )
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,28 +83,19 @@ for args in "${experiments[@]}"; do
     fi
 
     # Create subdirectory based on method and filter status
-    if [ "$method" == "adaptive" ] || [ "$method" == "fixed" ]; then
-        if [ "$filter" == "filter" ]; then 
-            filter_suffix="_filtered"
-        else 
-            filter_suffix="_unfiltered"
-        fi
-        sub_dir="${method}${filter_suffix}"
-    elif [ "$method" == "naive" ]; then
-        if [ "$filter" == "filter" ]; then 
-            filter_suffix="_filtered"
-        else 
-            filter_suffix="_unfiltered"
-        fi
-        sub_dir="${method}${filter_suffix}"
-    elif [ "$method" == "nop" ]; then
+    if [ "$method" == "nop" ]; then
         if [ "$filter" == "filter" ]; then 
             sub_dir="filter_only"
         else 
             sub_dir="unsupervised"
         fi
     else
-        sub_dir="${method}"
+        if [ "$filter" == "filter" ]; then 
+            filter_suffix="_filtered"
+        else 
+            filter_suffix="_unfiltered"
+        fi
+        sub_dir="${method}${filter_suffix}"
     fi
 
     # Create subdirectory with profile prefix
