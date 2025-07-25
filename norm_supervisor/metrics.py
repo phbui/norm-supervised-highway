@@ -84,3 +84,21 @@ def calculate_exposure(
     # time exposure = sum(beta * period) where beta = 1 if value < threshold else 0
     period = 1 / sample_frequency
     return period * (sample_history < threshold).sum()
+
+def calculate_mean_under(
+    sample_history: npt.ArrayLike,
+    threshold: float
+) -> float:
+    """
+    Calculate the mean value for the provided metric under the specified threshold
+
+    :param sample_history: a list of samples
+    :param threshold: the threshold for exposure
+    """
+    sample_history = np.asarray(sample_history, dtype=np.float64)
+    if sample_history.ndim != 1:
+        raise ValueError("Sample history must be a 1D array of numerics.")
+    mask = sample_history <= threshold
+    if not any(mask):
+        return np.nan
+    return sample_history[mask].mean()

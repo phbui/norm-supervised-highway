@@ -11,8 +11,36 @@ from collections import defaultdict
 import argparse
 
 import matplotlib
-matplotlib.use('Agg')  # Use Agg backend for non-interactive plotting
+matplotlib.use('pgf')  # Use pgf backend to render text in LaTeX
 import matplotlib.pyplot as plt
+
+plt.rcParams.update({
+    "text.usetex": True,
+    "pgf.texsystem": "pdflatex",
+    "pgf.rcfonts": False,  # don't override LaTeX document fonts
+    "font.family": "serif",  # use whatever LaTeX is using (Times here)
+    "text.latex.preamble": r"\usepackage{times}"
+})
+
+# Utility function to compute left/right lane preferences for any number of lanes
+def compute_left_right_lane_preferences(stats, n_lanes=None):
+    """Given a stats dict (col: (mean, std)), compute left/right lane preferences and their std errors."""
+    # Find all lane_X_preference columns
+    lane_cols = sorted([col for col in stats.keys() if col.startswith('lane_') and col.endswith('_preference')],
+                       key=lambda x: int(x.split('_')[1]))
+    if not lane_cols:
+        return None, None, None, None
+    if n_lanes is None:
+        n_lanes = len(lane_cols)
+    half = n_lanes // 2
+    left_cols = lane_cols[:half]
+    right_cols = lane_cols[half:]
+    # Sum means and propagate std errors (sqrt of sum of variances)
+    left_mean = sum(stats[col][0] for col in left_cols if col in stats)
+    right_mean = sum(stats[col][0] for col in right_cols if col in stats)
+    left_std = np.sqrt(sum((stats[col][1] ** 2) for col in left_cols if col in stats))
+    right_std = np.sqrt(sum((stats[col][1] ** 2) for col in right_cols if col in stats))
+    return left_mean, left_std, right_mean, right_std
 
 
 def list_csv_files(directory):
@@ -306,10 +334,13 @@ def generate_markdown_tables(grouped_data):
         'collision_violation_rate'             : 'Collision Violations (hr⁻¹)',
         'lane_change_collision_violation_rate' : 'Lane Change Collision Violations (hr⁻¹)',
         
-        # Lane usage metrics
-        'lane_0_preference': 'Left Lane Preference (%)',
-        'lane_1_preference': 'Right Lane Preference (%)'
+        # Lane usage metrics (old, will be replaced)
+        # 'lane_0_preference': 'Left Lane Preference (%)',
+        # 'lane_1_preference': 'Right Lane Preference (%)'
     }
+    # Add new left/right lane preference display names
+    display_names['left_lane_preference'] = 'Left Lane Preference (%)'
+    display_names['right_lane_preference'] = 'Right Lane Preference (%)'
     
     # Add lane usage metrics to display names
     all_lane_cols = set()
@@ -317,8 +348,8 @@ def generate_markdown_tables(grouped_data):
         stats, _ = calculate_statistics(group_data)
         lane_cols = get_lane_columns(stats)
         all_lane_cols.update(lane_cols)
-    
-    summary_metric_categories['Lane Usage'] = sorted(all_lane_cols)
+    # Instead of per-lane, use left/right
+    summary_metric_categories['Lane Usage'] = ['left_lane_preference', 'right_lane_preference']
 
     # Build header rows
     summary_header_cols = ['Method']
@@ -372,19 +403,30 @@ def generate_markdown_tables(grouped_data):
                 config_dict = dict(config_tuple)
                 stats, n_experiments = calculate_statistics(group_data)
                 config_name = create_config_name(config_dict)
-                
+                # Compute left/right lane preferences
+                left_mean, left_std, right_mean, right_std = compute_left_right_lane_preferences(stats)
                 # Build summary data row
                 summary_row = [config_name]
                 for category, metrics in summary_metric_categories.items():
                     for metric in metrics:
                         if metric == 'collision_rate':
                             summary_row.append(format_collision_rate(group_data))
-                        elif metric in ['tet_2s', 'tet_3s', 'teud_2v', 'teud_3v', 'lane_0_preference', 'lane_1_preference']:
+                        elif metric in ['tet_2s', 'tet_3s', 'teud_2v', 'teud_3v']:
                             if metric in stats:
                                 mean_val, std_val = stats[metric]
                                 mean_val *= 100
                                 std_val *= 100
                                 summary_row.append(format_statistic(mean_val, std_val, n_experiments, metric))
+                            else:
+                                summary_row.append("-")
+                        elif metric == 'left_lane_preference':
+                            if left_mean is not None:
+                                summary_row.append(format_statistic(left_mean * 100, left_std * 100, n_experiments, metric))
+                            else:
+                                summary_row.append("-")
+                        elif metric == 'right_lane_preference':
+                            if right_mean is not None:
+                                summary_row.append(format_statistic(right_mean * 100, right_std * 100, n_experiments, metric))
                             else:
                                 summary_row.append("-")
                         elif metric in stats:
@@ -395,7 +437,6 @@ def generate_markdown_tables(grouped_data):
                             summary_row.append(format_statistic(mean_val, std_val, n_experiments, metric))
                         else:
                             summary_row.append("-")
-                
                 summary_rows.append(summary_row)
                 summary_configs.append(config_dict)
                 
@@ -492,264 +533,6 @@ def write_table_section(f, title, header_cols, rows):
         f.write("| " + " | ".join(str(cell) for cell in row) + " |\n")
 
 
-def generate_lane_preference_plot(grouped_data, output_dir):
-    """Generate horizontal bar chart showing lane preferences with center line at 0.5."""
-    # Create plots subdirectory
-    plots_dir = os.path.join(output_dir, 'plots')
-    os.makedirs(plots_dir, exist_ok=True)
-    
-    # Group data by model-environment configuration
-    model_env_groups = defaultdict(lambda: defaultdict(dict))
-    for config_tuple, group_data in grouped_data.items():
-        config_dict = dict(config_tuple)
-        model_env_key = (config_dict['model'], config_dict['env'])
-        profile = config_dict['profile']
-        model_env_groups[model_env_key][profile][config_tuple] = group_data
-    
-    for (model, env), profile_configs in sorted(model_env_groups.items()):
-        # Collect lane preference data for this model-environment
-        preference_data = []
-        seen_baselines = set()
-        profile_groups = defaultdict(list)
-        
-        for profile, configs in profile_configs.items():
-            for config_tuple, group_data in configs.items():
-                config_dict = dict(config_tuple)
-                # Skip ablation studies
-                if config_dict['method'] not in ['unsupervised', 'filter_only'] and not config_dict['filtered']:
-                    continue
-
-                stats, n_experiments = calculate_statistics(group_data)
-                lane_1_key = 'lane_1_preference'
-                if lane_1_key in stats:
-                    mean_val, std_val = stats[lane_1_key]
-                    method_name = create_config_name(config_dict)
-                    
-                    # For baseline methods, only include one version
-                    if config_dict['method'] in ['unsupervised', 'filter_only']:
-                        baseline_key = f"{config_dict['method']}"
-                        if baseline_key in seen_baselines:
-                            continue
-                        seen_baselines.add(baseline_key)
-                        label = method_name
-                    else:
-                        label = method_name
-                    
-                    profile_groups[profile].append({
-                        'label': label,
-                        'mean': mean_val,
-                        'std': std_val,
-                        'profile': config_dict['profile'],
-                        'method': method_name,
-                        'original_method': config_dict['method'],
-                        'original_value': config_dict.get('value', 0),
-                        'n_experiments': n_experiments
-                    })
-        
-        if not profile_groups:
-            print(f"No lane preference data found for {model} {env}. Skipping plot generation.")
-            continue
-        
-        # Build final data with headers in correct positions
-        preference_data = []
-        
-        # Sort data within each profile group
-        for profile in profile_groups:
-            def profile_sort_key(data):
-                method = data['original_method']
-                value = data['original_value']
-                if method in ['unsupervised', 'filter_only']:
-                    return (999, 0, 0)
-                elif method == 'naive':
-                    return (0, 0, 0)
-                elif method == 'adaptive':
-                    return (1, 0, value or 0)
-                else:  # fixed
-                    return (2, 0, value or 0)
-            profile_groups[profile].sort(key=profile_sort_key)
-        
-        # Add baselines first
-        baseline_data = []
-        for profile in profile_groups:
-            for data in profile_groups[profile]:
-                if data['original_method'] in ['unsupervised', 'filter_only']:
-                    data['profile'] = 'no_profile'
-                    baseline_data.append(data)
-        
-        baseline_data.sort(key=lambda x: (0 if x['original_method'] == 'unsupervised' else 1, 0))
-        
-        # Add 'No Profile' header before baselines
-        if baseline_data:
-            header_data = {
-                'label': 'No Profile',
-                'mean': np.nan,
-                'std': np.nan,
-                'profile': 'no_profile',
-                'method': 'header',
-                'original_method': 'header',
-                'original_value': 0,
-                'n_experiments': 1
-            }
-            preference_data.append(header_data)
-        preference_data.extend(baseline_data)
-        
-        # Add cautious profile with header
-        if 'cautious' in profile_groups:
-            header_data = {
-                'label': 'Cautious Profile',
-                'mean': np.nan,
-                'std': np.nan,
-                'profile': 'cautious',
-                'method': 'header',
-                'original_method': 'header',
-                'original_value': 0,
-                'n_experiments': 1
-            }
-            preference_data.append(header_data)
-            cautious_data = [data for data in profile_groups['cautious'] 
-                           if data['original_method'] not in ['unsupervised', 'filter_only']]
-            preference_data.extend(cautious_data)
-        
-        # Add efficient profile with header
-        if 'efficient' in profile_groups:
-            header_data = {
-                'label': 'Efficient Profile',
-                'mean': np.nan,
-                'std': np.nan,
-                'profile': 'efficient',
-                'method': 'header',
-                'original_method': 'header',
-                'original_value': 0,
-                'n_experiments': 1
-            }
-            preference_data.append(header_data)
-            efficient_data = [data for data in profile_groups['efficient'] 
-                           if data['original_method'] not in ['unsupervised', 'filter_only']]
-            preference_data.extend(efficient_data)
-        
-        if not preference_data:
-            print(f"No lane preference data found for {model} {env}. Skipping plot generation.")
-            continue
-        
-        # Invert the order so methods appear from bottom to top
-        preference_data.reverse()
-        
-        # Identify y-index ranges for each profile group
-        group_ranges = {}
-        current_profile = None
-        start_idx = 0
-        for i, data in enumerate(preference_data):
-            if data['method'] == 'header':
-                if current_profile:
-                    group_ranges[current_profile] = (start_idx, i)
-                    start_idx = i + 1
-            current_profile = data['profile']
-        
-        # Create the plot
-        fig, ax = plt.subplots(figsize=(10, max(6, len(preference_data) * 0.4)))
-        
-        # Shade profile regions
-        profile_colors = {'cautious': '#e6f2ff', 'efficient': '#fff7e6', 'no_profile': '#f0f0f0'}
-        for profile, (ymin, ymax) in group_ranges.items():
-            if profile in profile_colors:
-                ax.axhspan(ymin-0.5, ymax+0.5, facecolor=profile_colors[profile], alpha=0.4, zorder=0)
-        
-        # Set up the plot
-        y_positions = np.arange(len(preference_data))
-        center_line = 0.0
-        left_color = '#ff7f0e'
-        right_color = '#1f77b4'
-        
-        # Plot bars
-        for i, data in enumerate(preference_data):
-            mean_val = data['mean']
-            if np.isnan(mean_val) or data['method'] == 'header':
-                continue
-            
-            # Convert lane preference from [0,1] to [-1,1] scale
-            scaled_mean = (mean_val - 0.5) * 2
-            if not np.isnan(data['std']):
-                n_experiments = data.get('n_experiments', 1)
-                se_val = data['std'] / np.sqrt(n_experiments)
-                scaled_se = se_val * 2
-            else:
-                scaled_se = np.nan
-            
-            # Determine bar direction and color
-            if scaled_mean < center_line:
-                bar_width = abs(scaled_mean)
-                bar_start = scaled_mean
-                color = left_color
-            else:
-                bar_width = scaled_mean
-                bar_start = center_line
-                color = right_color
-            
-            # Plot the bar
-            ax.barh(i, bar_width, left=bar_start, height=0.6, color=color, alpha=0.7)
-            
-            # Add error bars if std is available
-            if not np.isnan(scaled_se):
-                if scaled_mean < center_line:
-                    error_x = [max(-1, scaled_mean - scaled_se), scaled_mean + scaled_se]
-                else:
-                    error_x = [scaled_mean - scaled_se, min(1, scaled_mean + scaled_se)]
-                error_y = [i, i]
-                ax.plot(error_x, error_y, 'k-', linewidth=2, alpha=0.8)
-                ax.plot([error_x[0], error_x[0]], [i-0.1, i+0.1], 'k-', linewidth=2, alpha=0.8)
-                ax.plot([error_x[1], error_x[1]], [i-0.1, i+0.1], 'k-', linewidth=2, alpha=0.8)
-        
-        # Add center line
-        ax.axvline(x=center_line, color='black', linestyle='--', linewidth=2, alpha=0.7)
-        
-        # Customize the plot
-        ax.set_yticks(y_positions)
-        labels = []
-        for data in preference_data:
-            if data['method'] == 'header':
-                label = data['label']
-            else:
-                label = data['label']
-            label = label.replace('_', '-')
-            labels.append(label)
-        ax.set_yticklabels(labels)
-        
-        # Apply bold formatting to header tick labels
-        for i, data in enumerate(preference_data):
-            if data['method'] == 'header':
-                ax.get_yticklabels()[i].set_weight('bold')
-        
-        ax.set_xlim(-1, 1)
-        ax.set_xlabel('Lane Preference')
-        ax.set_title(f'Lane Preference Analysis - {model} {env}')
-        
-        # Add visual grouping for profiles
-        current_profile = None
-        for i, data in enumerate(preference_data):
-            if current_profile != data['profile']:
-                if current_profile is not None:
-                    ax.axhline(y=i-0.5, color='gray', linestyle='-', linewidth=1, alpha=0.3)
-                current_profile = data['profile']
-        
-        # Add legend
-        from matplotlib.patches import Patch
-        legend_elements = [
-            Patch(facecolor=left_color, alpha=0.7, label='Left Lane Preference'),
-            Patch(facecolor=right_color, alpha=0.7, label='Right Lane Preference'),
-        ]
-        ax.legend(handles=legend_elements, loc='best')
-        
-        # Add grid for better readability
-        ax.grid(True, alpha=0.3, axis='x')
-        
-        # Adjust layout and save
-        plt.tight_layout()
-        plot_file = os.path.join(plots_dir, f'lane_preference_{model}_{env}.png')
-        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"Lane preference plot saved to: {plot_file}")
-
-
 def generate_adaptive_trend_plot(grouped_data, output_dir, adaptive_values):
     """Generate line plots showing how metrics evolve with adaptive method values."""
     # Create plots subdirectory
@@ -775,18 +558,26 @@ def generate_adaptive_trend_plot(grouped_data, output_dir, adaptive_values):
         if 'cautious' not in profile_configs:
             continue
         
-        # Create subplots with shared x-axis
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+        # Create subplots with shared x-axis to fit in a single column
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.25, 3.5), sharex=True)
+
+        SUPTITLE_FONTSIZE = 10
+        LABEL_FONTSIZE = 9      
+        LEGEND_FONTSIZE = 8
+        TICK_FONTSIZE = 8
+        MARKER_SIZE = 2.5
+        ERRORBAR_LINEWIDTH = 1.2
         
         # Only plot cautious profile
         profile = 'cautious'
         profile_configs = profile_configs[profile]
         
         # Plot data for cautious profile
-        x_values = []
+        x_collision = []
         y_collision_values = []
-        y_cost_values = []
         y_collision_errors = []
+        x_cost = []
+        y_cost_values = []
         y_cost_errors = []
         
         # Collect data points for adaptive values
@@ -807,70 +598,66 @@ def generate_adaptive_trend_plot(grouped_data, output_dir, adaptive_values):
                         else:
                             collision_rate = float(collision_rate_str)
                             collision_error = 0  # No error info available
+                        x_collision.append(value)
                         y_collision_values.append(collision_rate)
-                        x_values.append(value)
                         y_collision_errors.append(collision_error)
                     except ValueError:
                         pass
-                
                 # Get cost rate (raw, before 3600 multiplication)
                 if 'cost_rate' in stats:
                     mean_val, std_val = stats['cost_rate']
                     if not pd.isna(mean_val):
                         # Convert to per-hour units
                         cost_rate = mean_val * 3600
-                        y_cost_values.append(cost_rate)
-                        if len(x_values) < len(y_cost_values):  # In case collision rate was missing
-                            x_values.append(value)
                         # Compute standard error: std / sqrt(n), then convert to per-hour
                         se_val = std_val / np.sqrt(n_experiments) if n_experiments > 1 else 0
                         se_val *= 3600  # Convert error to per-hour units
+                        x_cost.append(value)
+                        y_cost_values.append(cost_rate)
                         y_cost_errors.append(se_val)
         
-        if x_values:  # Only plot if we have data
-            # Plot collision rate on top subplot
-            if y_collision_values:
-                ax1.errorbar(x_values, y_collision_values, yerr=y_collision_errors, 
-                           marker='s', color='black', linestyle=':', label='Collision Rate',
-                           capsize=3, capthick=1, linewidth=2, markersize=6)
-            
-            # Plot cost rate on bottom subplot
-            if y_cost_values:
-                ax2.errorbar(x_values, y_cost_values, yerr=y_cost_errors, 
-                           marker='s', color='black', linestyle=':', label='Cost Rate',
-                           capsize=3, capthick=1, linewidth=2, markersize=6)
+        # Only plot if we have data
+        if x_collision and y_collision_values:
+            ax1.errorbar(x_collision, y_collision_values, yerr=y_collision_errors, 
+                       marker='s', color='black', linestyle=':',
+                       capsize=3, capthick=1, linewidth=ERRORBAR_LINEWIDTH, markersize=MARKER_SIZE)
         
-        # Customize plots
-        ax2.set_xlabel('Adaptive Value', color='black')
-        ax1.set_ylabel('Collision Rate (hr⁻¹)', color='black')
-        ax2.set_ylabel('Cost Rate (hr⁻¹)', color='black') # Changed to raw cost rate
-        
-        # Set subplot titles
-        ax1.set_title('Collision Rate', fontsize=12, color='black')
-        ax2.set_title('Cost Rate', fontsize=12, color='black')
-        
-        # Set main title
-        fig.suptitle(f'Adaptive Method Trends - {model} {env} (Cautious Profile)', fontsize=14)
+        if x_cost and y_cost_values:
+            ax2.errorbar(x_cost, y_cost_values, yerr=y_cost_errors, 
+                       marker='s', color='black', linestyle=':',
+                       capsize=3, capthick=1, linewidth=ERRORBAR_LINEWIDTH, markersize=MARKER_SIZE)
         
         # Use log scale for x-axis if values span multiple orders of magnitude
         if max(adaptive_values) / min(adaptive_values) > 10:
             ax1.set_xscale('log')
             ax2.set_xscale('log')
         
-        # Set y-axis limits
-        ax1.set_ylim(bottom=0)  # Start from 0 for collision rate
-        if y_cost_values:
-            max_cost = max(y_cost_values) * 1.1  # Add 10% padding
-            ax2.set_ylim(0, max_cost)
-        else:
-            ax2.set_ylim(0, 1)  # Default if no data
-        
         # Add grid
         ax1.grid(True, alpha=0.3)
         ax2.grid(True, alpha=0.3)
-        
+
+        # Add vertical dashed line at projection point
+        for ax in [ax1, ax2]:
+            ax.axvline(x=1, color='gray', linestyle='--', linewidth=1.2, alpha=0.6)
+
+        ax1.set_ylabel(r'Collision Rate $\left(\mathrm{hr}^{-1}\right)$', fontsize=LABEL_FONTSIZE)
+        ax2.set_ylabel(r'Cost Rate $\left(\mathrm{hr}^{-1}\right)$', fontsize=LABEL_FONTSIZE)
+        ax2.set_xlabel(r'KL Budget $\left(\delta\right)$', fontsize=LABEL_FONTSIZE)
+        fig.suptitle(r'Effect of KL Budget in Adaptive-$\beta$ SCPS', fontsize=SUPTITLE_FONTSIZE, y=0.96)
+        for ax in [ax1, ax2]:
+            ax.tick_params(axis='both', which='major', labelsize=TICK_FONTSIZE)
+
         plt.tight_layout()
-        plot_file = os.path.join(plots_dir, f'adaptive_trends_{model}_{env}.png')
+        fig.align_ylabels([ax1, ax2])
+        for ax in [ax1, ax2]:
+            xmin, xmax = ax.get_xlim()
+            ax.axvspan(1, xmax, color='gray', alpha=0.2, label='Cost-Optimal\nProjection')
+            ax.set_xlim(xmin, xmax)
+
+        # Add a shared legend across the top, under the title
+        ax1.legend(loc='upper right', fontsize=LEGEND_FONTSIZE)
+    
+        plot_file = os.path.join(plots_dir, f'adaptive_trends_{model}_{env}.pdf')
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Adaptive trends plot saved to: {plot_file}")
@@ -943,10 +730,6 @@ def main():
     # Generate summary table
     print("Generating summary table...")
     summary_rows = generate_summary_table(filtered_grouped_data)
-    
-    # Generate lane preference plot
-    print("Generating lane preference plot...")
-    generate_lane_preference_plot(filtered_grouped_data, args.output_dir)
     
     # Generate adaptive trends plot
     if plot_adaptive_values:

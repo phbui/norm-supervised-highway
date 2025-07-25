@@ -20,9 +20,9 @@ import norm_supervisor.metrics as metrics
 # Configuration mappings
 CONFIGS = {
     'default': {
-        'model_file': '2_lanes_5_vehicles.zip',
-        'env_config': '2_lanes_5_vehicles.json',
-        'lanes': 2,
+        'model_file': '4_lanes_20_vehicles.zip',
+        'env_config': '4_lanes_20_vehicles.json',
+        'lanes': 4,
         'policy_freq': 1
     }
 }
@@ -147,20 +147,17 @@ class ExperimentResults:
             total_cost += ep.cost
             total_avoided_cost += ep.avoided_cost
 
-        # Sum episode times for normalization
-        total_time = sum(episode_lengths)
-
-        # Calculate time exposed TTC and following distance
-        sample_freq = self.config.model_env['policy_freq']
-        tet_1s = metrics.calculate_exposure(all_ttc_history, sample_freq, 1) / total_time
-        tet_2s = metrics.calculate_exposure(all_ttc_history, sample_freq, 2) / total_time
-        tet_3s = metrics.calculate_exposure(all_ttc_history, sample_freq, 3) / total_time
-        teud_1v = metrics.calculate_exposure(all_distance_history, sample_freq, 1 * VEHICLE_LENGTH) / total_time
-        teud_2v = metrics.calculate_exposure(all_distance_history, sample_freq, 2 * VEHICLE_LENGTH) / total_time
-        teud_3v = metrics.calculate_exposure(all_distance_history, sample_freq, 3 * VEHICLE_LENGTH) / total_time
+        # Calculate mean TTC and following distance under thresholds
+        ttc_3s = metrics.calculate_mean_under(all_ttc_history, 3)
+        ttc_3_5s = metrics.calculate_mean_under(all_ttc_history, 3.5)
+        ttc_4s = metrics.calculate_mean_under(all_ttc_history, 4)
+        distance_3v = metrics.calculate_mean_under(all_distance_history, 3 * VEHICLE_LENGTH)
+        distance_3_5v = metrics.calculate_mean_under(all_distance_history, 3.5 * VEHICLE_LENGTH)
+        distance_4v = metrics.calculate_mean_under(all_distance_history, 4 * VEHICLE_LENGTH)
 
         # Normalize lane preferences, violation rates, and cost rates
         lane_preferences, norm_violation_rates, constraint_violation_rates = {}, {}, {}
+        total_time = sum(episode_lengths)
         for lane, time in all_lane_times.items():
             lane_preferences[lane] = time / total_time
         for norm, count in all_norm_violations.items():
@@ -180,12 +177,12 @@ class ExperimentResults:
             'num_episodes': len(self.episode_metrics),
             'mean_episode_length': np.mean(episode_lengths),
             'total_collisions': total_collisions,
-            'tet_1s': tet_1s,
-            'tet_2s': tet_2s,
-            'tet_3s': tet_3s,
-            'teud_1v': teud_1v,
-            'teud_2v': teud_2v,
-            'teud_3v': teud_3v,
+            'ttc_3s': ttc_3s,
+            'ttc_3_5s': ttc_3_5s,
+            'ttc_4s': ttc_4s,
+            'distance_3v': distance_3v,
+            'distance_3_5v': distance_3_5v,
+            'distance_4v': distance_4v,
             'mean_speed': np.mean(all_speed_history),
             'speed_violation_rate': norm_violation_rates.get('SpeedNorm', np.nan),
             'tailgating_violation_rate': norm_violation_rates.get('TailgatingNorm', np.nan),
@@ -221,8 +218,8 @@ class CSVWriter:
         """Get CSV field names based on lane count."""
         base_fields = [
             'experiment_id', 'policy_freq', 'profile', 'method', 'value', 'num_episodes',
-            'mean_episode_length', 'total_collisions', 'tet_1s', 'tet_2s', 'tet_3s', 'teud_1v',
-            'teud_2v', 'teud_3v', 'mean_speed'
+            'mean_episode_length', 'total_collisions', 'ttc_3s', 'ttc_3_5s', 'ttc_4s', 'distance_3v',
+            'distance_3_5v', 'distance_4v', 'mean_speed'
         ]
         
         # Add lane fields

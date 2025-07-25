@@ -50,8 +50,8 @@ class AbstractNormProfile(ABC):
         self.constraints: list[AbstractConstraint] = [
             CollisionConstraint(min_ttc=self.collision_threshold),
             LaneChangeCollisionConstraint(min_ttc=self.collision_threshold),
-            SafetyEnvelopeConstraint(safe_distance=self.safety_envelope),
-            LaneChangeSafetyEnvelopeConstraint(safe_distance=self.safety_envelope),
+            #SafetyEnvelopeConstraint(safe_distance=self.safety_envelope),
+            #LaneChangeSafetyEnvelopeConstraint(safe_distance=self.safety_envelope),
         ]
 
         # Initialize norms with the specified thresholds using a standard weighting scheme

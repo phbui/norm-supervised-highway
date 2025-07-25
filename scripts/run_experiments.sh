@@ -5,7 +5,7 @@ NUM_EXPERIMENTS=5
 NUM_EPISODES=100
 
 # Set to true to overwrite existing results
-FORCE_WRITE=true
+FORCE_WRITE=false
 
 experiments=(
     # BASELINES
@@ -103,7 +103,7 @@ for args in "${experiments[@]}"; do
 
     # Build output filename
     if [ "$method" == "adaptive" ] || [ "$method" == "fixed" ]; then
-        out_path="$PROJECT_ROOT/results/${profile}/${sub_dir}/2L5V_2L5V_${value}.csv"
+        out_path="$PROJECT_ROOT/results/${profile}/${sub_dir}/4L20V_4L20V_${value}.csv"
         if [ "$FORCE_WRITE" = true ] && [ -f "$out_path" ]; then
             echo "Overwriting existing results: $out_path"
         elif [ -f "$out_path" ]; then
@@ -120,7 +120,7 @@ for args in "${experiments[@]}"; do
             --episodes "$NUM_EPISODES" \
             --output "$out_path"
     else
-        out_path="$PROJECT_ROOT/results/${profile}/${sub_dir}/2L5V_2L5V.csv"
+        out_path="$PROJECT_ROOT/results/${profile}/${sub_dir}/4L20V_4L20V.csv"
         if [ "$FORCE_WRITE" = true ] && [ -f "$out_path" ]; then
             echo "Overwriting existing results: $out_path"
         elif [ -f "$out_path" ]; then
